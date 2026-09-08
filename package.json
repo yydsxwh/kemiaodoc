@@ -1,0 +1,18 @@
+{
+  "name": "kemiaodoc",
+  "private": true,
+  "version": "0.1.0",
+  "description": "科苗文档：从歪歪滴艾斯（andyyyds）网页文档抽出的公共编辑包，供其他产品引用。",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/*\" build",
+    "test": "pnpm --filter @kemiaodoc/core test",
+    "dev": "pnpm --filter @kemiaodoc/demo dev",
+    "lint": "pnpm -r --if-present lint"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.12.1",
+  "license": "MIT"
+}

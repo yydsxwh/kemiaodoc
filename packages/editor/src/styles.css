@@ -1,0 +1,199 @@
+.kemiaodoc-root {
+  --kd-bg: #f8fafc;
+  --kd-ink: #1e293b;
+  --kd-muted: #64748b;
+  --kd-line: rgba(30, 41, 59, 0.12);
+  --kd-brand: #0ea5e9;
+  --kd-brand-soft: rgba(125, 211, 252, 0.18);
+  --kd-fire: #d97706;
+  --kd-card: #ffffff;
+  --kd-shadow: 0 16px 40px rgba(30, 41, 59, 0.07);
+  color: var(--kd-ink);
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+
+.kemiaodoc-root .kd-surface {
+  overflow: hidden;
+  border-radius: 28px;
+  background: var(--kd-card);
+  box-shadow: var(--kd-shadow);
+  border: 1px solid var(--kd-line);
+}
+
+.kemiaodoc-root .kd-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px solid var(--kd-line);
+  background: #fff;
+  color: var(--kd-ink);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.kemiaodoc-root .kd-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.kemiaodoc-root .kd-btn-primary {
+  background: var(--kd-brand);
+  border-color: transparent;
+  color: #fff;
+}
+
+.kemiaodoc-root .kd-btn-secondary {
+  background: #fff;
+}
+
+.kemiaodoc-root .kd-field {
+  min-height: 44px;
+  border: 1px solid var(--kd-line);
+  background: #fff;
+  color: var(--kd-ink);
+}
+
+.kemiaodoc-root .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.kemiaodoc-root .docs-prose {
+  min-height: 62vh;
+  padding: 1.25rem 1rem 3rem;
+  outline: none;
+  color: var(--kd-ink);
+  font-size: 1.05rem;
+  line-height: 1.75;
+  word-break: break-word;
+}
+
+@media (min-width: 640px) {
+  .kemiaodoc-root .docs-prose {
+    padding: 1.75rem 2rem 4rem;
+    font-size: 1.08rem;
+  }
+}
+
+.kemiaodoc-root .docs-prose p { margin: 0.35em 0; }
+.kemiaodoc-root .docs-prose h1,
+.kemiaodoc-root .docs-prose h2,
+.kemiaodoc-root .docs-prose h3,
+.kemiaodoc-root .docs-prose h4,
+.kemiaodoc-root .docs-prose h5,
+.kemiaodoc-root .docs-prose h6 {
+  margin: 1.1em 0 0.4em;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.kemiaodoc-root .docs-prose h1 { font-size: 1.85rem; }
+.kemiaodoc-root .docs-prose h2 { font-size: 1.5rem; }
+.kemiaodoc-root .docs-prose h3 { font-size: 1.28rem; }
+.kemiaodoc-root .docs-prose h4 { font-size: 1.12rem; }
+.kemiaodoc-root .docs-prose h5,
+.kemiaodoc-root .docs-prose h6 { font-size: 1.02rem; }
+.kemiaodoc-root .docs-prose strong { font-weight: 700; }
+.kemiaodoc-root .docs-prose img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.75rem 0;
+  border-radius: 12px;
+}
+.kemiaodoc-root .docs-prose table {
+  width: 100%;
+  margin: 0.85rem 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.kemiaodoc-root .docs-prose td,
+.kemiaodoc-root .docs-prose th {
+  border: 1px solid var(--kd-line);
+  padding: 0.45rem 0.55rem;
+  vertical-align: top;
+  word-break: break-word;
+}
+.kemiaodoc-root .docs-prose th {
+  background: var(--kd-brand-soft);
+  font-weight: 600;
+}
+.kemiaodoc-root .docs-prose .selectedCell {
+  background: color-mix(in srgb, var(--kd-brand) 16%, transparent);
+}
+.kemiaodoc-root .docs-prose p.is-editor-empty:first-child:before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--kd-muted);
+  pointer-events: none;
+}
+
+.kemiaodoc-root .docs-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.7rem;
+  border-bottom: 1px solid var(--kd-line);
+  background: color-mix(in srgb, var(--kd-card) 92%, white);
+}
+
+.docs-print-page {
+  background: #fff;
+  width: min(100%, 210mm);
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 14mm 16mm 16mm;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.12);
+}
+.docs-print-band {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 1.4em;
+  font-size: 12px;
+  color: #555;
+}
+.docs-print-band span { flex: 1; }
+.docs-print-band .c { text-align: center; }
+.docs-print-band .r { text-align: right; }
+.docs-print-body { min-height: 220mm; padding: 8mm 0; }
+
+@media print {
+  @page { size: A4; margin: 0; }
+  body * { visibility: hidden; }
+  .docs-print-root,
+  .docs-print-root * { visibility: visible; }
+  .docs-print-root {
+    position: static !important;
+    inset: auto !important;
+    background: #fff !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  .docs-print-toolbar { display: none !important; }
+  .docs-print-sheets { max-width: none !important; gap: 0 !important; padding: 0 !important; }
+  .docs-print-page {
+    box-shadow: none !important;
+    width: 210mm;
+    min-height: 297mm;
+    break-after: page;
+    page-break-after: always;
+  }
+  .docs-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+}
