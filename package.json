@@ -5,8 +5,8 @@
   "description": "科苗文档：从歪歪滴艾斯（andyyyds）网页文档抽出的公共编辑包，供其他产品引用。",
   "type": "module",
   "scripts": {
-    "build": "pnpm -r --filter \"./packages/*\" build",
-    "test": "pnpm --filter @kemiaodoc/core test",
+    "build": "pnpm -r --filter \"./packages/*\" --if-present build",
+    "test": "pnpm --filter @kemiaodoc/core test && pnpm --filter @kemiaodoc/docs test",
     "dev": "pnpm --filter @kemiaodoc/demo dev",
     "lint": "pnpm -r --if-present lint"
   },

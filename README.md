@@ -19,6 +19,7 @@
 
 | 包 | 用途 |
 | --- | --- |
+| `@kemiaodoc/docs` | 从 Andyyyds `@andyyyds/docs` 抽出的原版源码：编辑器、存储、导入导出、Next 示例路由 |
 | `@kemiaodoc/core` | 文档 JSON 模型、消毒、编号样式、页眉页脚、HTML/文本转换 |
 | `@kemiaodoc/editor` | React 编辑器、工具栏、打印预览、本地/HTTP 存储适配 |
 | `@kemiaodoc/docx` | Word 导入（mammoth）与导出（docx） |
@@ -73,6 +74,20 @@ pnpm --filter @kemiaodoc/demo dev
 
 演示默认在 `http://localhost:5173`。
 
+云端存储不要从本包里 import Prisma。在宿主启动时注入：
+
+```ts
+import { setDocsGetSession, setDocsPrisma } from "@kemiaodoc/docs"
+
+setDocsPrisma(prisma)
+setDocsGetSession(async () => {
+  const session = await yourAuth()
+  return session ? { id: session.userId } : null
+})
+```
+
+Next.js 可直接复制 `@kemiaodoc/docs` 里的 `api/docs/**` 与 `routes/products/docs/**`。
+
 ## 来源
 
-编辑器行为按 `https://yydsxwh.com/products/docs/local` 的网页文档实现移植：文档模型、编号 CSS、页眉页脚、导入导出和工具栏与线上产品对齐，并改成可发布的 TypeScript 公共包，方便颗秒系列及其他产品复用。
+源码来自公开仓库 [yydsxwh/Andyyyds](https://github.com/yydsxwh/Andyyyds) 的 `packages/docs`（`@andyyyds/docs`），对应线上 [网页文档](https://yydsxwh.com/products/docs)。已去掉对 `@andyyyds/shared` 的硬依赖，改成 `setDocsPrisma` / `setDocsGetSession`，方便颗秒系列及其他产品复用。
