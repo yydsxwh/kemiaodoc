@@ -94,7 +94,7 @@ export function DocsHome({
         )
       ) : (
         <p className="text-sm leading-6 text-[var(--muted)]">
-          未登录也可以先在浏览器里写；换设备或清缓存会丢。登录后可保存多篇到云端。
+          未登录也可以先写，稿会实时存在这台电脑。登录后会边写边同步云端，关页或死机也不容易丢。
         </p>
       )}
     </div>

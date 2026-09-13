@@ -1,9 +1,15 @@
 import { createEmptyDocument, LOCAL_DOC_ID, type KemiaoDocument } from "@kemiaodoc/core"
 import { exportDocx, importDocx } from "@kemiaodoc/docx"
-import { DocsEditor, DocsWorkspace, createLocalStorageAdapter } from "@kemiaodoc/editor"
+import {
+  DocsEditor,
+  DocsWorkspace,
+  createDurableAdapter,
+  createLocalVaultAdapter,
+  createOnlineGate,
+} from "@kemiaodoc/editor"
 import { useMemo, useState } from "react"
 
-const storage = createLocalStorageAdapter()
+const storage = createDurableAdapter(createOnlineGate(createLocalVaultAdapter()))
 
 export function App() {
   const [current, setCurrent] = useState<KemiaoDocument | null>(null)
@@ -21,20 +27,24 @@ export function App() {
       <header className="demo-hero">
         <h1>科苗文档</h1>
         <p>
-          从歪歪滴艾斯（andyyyds）网页文档抽出的公共编辑包。其他产品可安装
+          写作业时不用自己点保存：联网会实时存到云端，没网先存在这台电脑，关页或死机也能找回。其他产品可安装
           <code> @kemiaodoc/editor </code>
-          后直接引用同一套编辑、导入导出和打印能力。
+          后直接引用。
         </p>
       </header>
       {current ? (
         <DocsEditor
           initial={initial}
+          loggedIn
           storage={storage}
           docx={docx}
           onNavigateHome={() => setCurrent(null)}
+          onCloudCreated={(id) => {
+            setCurrent((doc) => (doc ? { ...doc, id } : doc))
+          }}
         />
       ) : (
-        <DocsWorkspace storage={storage} onOpen={setCurrent} />
+        <DocsWorkspace loggedIn storage={storage} onOpen={setCurrent} />
       )}
     </div>
   )

@@ -60,12 +60,14 @@ export async function saveDocsDocumentRequest(
     listScheme?: DocsListScheme;
     pageChrome?: DocsPageChrome;
   },
+  options?: { keepalive?: boolean },
 ): Promise<DocsDocumentPayload> {
   const res = await fetch(`/api/docs/${encodeURIComponent(id)}`, {
     method: "PATCH",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+    keepalive: Boolean(options?.keepalive),
   });
   const body = await readJson(res);
   if (!res.ok) throw new Error(errorMessage(body, "保存失败"));

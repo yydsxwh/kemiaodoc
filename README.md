@@ -13,6 +13,7 @@
 - 打开 Word / HTML / Markdown / 纯文本
 - 另存为 Word、HTML、纯文本
 - 页眉页脚页码、打印预览（含微信提示）
+- 边写边保存：联网实时同步云端，断网先落本机；关页、死机可从本机快照找回
 - 浏览器草稿（localStorage）和云端适配器（`POST/PATCH/DELETE /api/docs`）
 
 ## 包结构
@@ -41,14 +42,20 @@
 或发布到 npm / 直接 git 依赖后：
 
 ```tsx
-import { DocsEditor, DocsWorkspace, createLocalStorageAdapter } from "@kemiaodoc/editor"
+import {
+  DocsEditor,
+  createDurableAdapter,
+  createHttpAdapter,
+  createOnlineGate,
+} from "@kemiaodoc/editor"
 import { exportDocx, importDocx } from "@kemiaodoc/docx"
 import "@kemiaodoc/editor/styles.css"
 
-const storage = createLocalStorageAdapter()
+const storage = createDurableAdapter(createOnlineGate(createHttpAdapter({ baseUrl: "https://yydsxwh.com" })))
 
 <DocsEditor
   initial={doc}
+  loggedIn
   storage={storage}
   docx={{ importFile: (file) => importDocx(file, file.name), exportFile: exportDocx }}
 />

@@ -3,7 +3,13 @@ import {
   DEFAULT_LOCAL_STORAGE_KEY,
   LOCAL_DOC_ID,
   createEmptyDocument,
+  isBrowserOnline,
+  isNetworkSaveError,
+  markLiveSnapshotSynced,
+  readLiveSnapshot,
   sanitizeDocument,
+  snapshotIsNewer,
+  writeLiveSnapshot,
   type DocNode,
   type KemiaoDocument,
   type ListScheme,
@@ -17,9 +23,17 @@ export type DocumentPatch = {
   pageChrome?: PageChrome
 }
 
+export type SaveOptions = {
+  keepalive?: boolean
+}
+
 export type StorageAdapter = {
   load?(id: string): Promise<KemiaoDocument | null> | KemiaoDocument | null
-  save(id: string, patch: DocumentPatch): Promise<KemiaoDocument | void> | KemiaoDocument | void
+  save(
+    id: string,
+    patch: DocumentPatch,
+    options?: SaveOptions,
+  ): Promise<KemiaoDocument | void> | KemiaoDocument | void
   create?(doc: DocumentPatch): Promise<KemiaoDocument>
   remove?(id: string): Promise<void>
   list?(): Promise<KemiaoDocument[]> | KemiaoDocument[]
@@ -131,12 +145,13 @@ export function createHttpAdapter(options?: {
       if (!response.ok) throw new Error(errorMessage(payload, "无法新建文档"))
       return sanitizeDocument(payload)
     },
-    async save(id, patch) {
+    async save(id, patch, options) {
       const response = await fetch(`${base}/api/docs/${encodeURIComponent(id)}`, {
         method: "PATCH",
         credentials,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
+        keepalive: Boolean(options?.keepalive),
       })
       const payload = await readJson(response)
       if (!response.ok) throw new Error(errorMessage(payload, "保存失败"))
@@ -186,6 +201,175 @@ export function createHttpAdapter(options?: {
       })
       if (!response.ok) throw new Error(errorMessage(await readJson(response), "另存为 Word 失败"))
       return response.blob()
+    },
+  }
+}
+
+/** 本机多篇「云端」库，演示和没接 API 的产品也能练自动同步。 */
+export function createLocalVaultAdapter(options?: { key?: string }): StorageAdapter {
+  const key = options?.key ?? "kemiaodoc-cloud-vault-v1"
+
+  const readMap = (): Record<string, KemiaoDocument> => {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) return {}
+      const parsed = JSON.parse(raw) as Record<string, unknown>
+      const next: Record<string, KemiaoDocument> = {}
+      for (const [id, value] of Object.entries(parsed)) {
+        next[id] = sanitizeDocument(value, id)
+      }
+      return next
+    } catch {
+      return {}
+    }
+  }
+
+  const writeMap = (map: Record<string, KemiaoDocument>) => {
+    localStorage.setItem(key, JSON.stringify(map))
+  }
+
+  return {
+    list: () =>
+      Object.values(readMap()).sort((left, right) =>
+        String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")),
+      ),
+    load: (id) => readMap()[id] || null,
+    save: (id, patch) => {
+      const map = readMap()
+      const current = map[id] || createEmptyDocument(id)
+      const next = sanitizeDocument(
+        {
+          ...current,
+          ...patch,
+          id,
+          updatedAt: new Date().toISOString(),
+        },
+        id,
+      )
+      map[id] = next
+      writeMap(map)
+      return next
+    },
+    async create(doc) {
+      const id = `cloud-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())}`
+      const map = readMap()
+      const next = sanitizeDocument(
+        {
+          ...doc,
+          id,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        id,
+      )
+      map[id] = next
+      writeMap(map)
+      return next
+    },
+    async remove(id) {
+      const map = readMap()
+      delete map[id]
+      writeMap(map)
+    },
+  }
+}
+
+/** 没网时让远程保存失败，走本机快照。 */
+export function createOnlineGate(remote: StorageAdapter): StorageAdapter {
+  const guard = () => {
+    if (!isBrowserOnline()) throw new TypeError("Failed to fetch")
+  }
+  return {
+    load: (id) => {
+      guard()
+      return remote.load?.(id) ?? null
+    },
+    save: (id, patch, options) => {
+      guard()
+      return remote.save(id, patch, options)
+    },
+    async create(doc) {
+      guard()
+      if (!remote.create) throw new Error("无法新建文档")
+      return remote.create(doc)
+    },
+    async remove(id) {
+      guard()
+      await remote.remove?.(id)
+    },
+    list: () => {
+      guard()
+      return remote.list?.() ?? []
+    },
+  }
+}
+
+/** 先写本机快照，再尽量同步远程；关页、死机、断网都能找回。 */
+export function createDurableAdapter(remote: StorageAdapter): StorageAdapter {
+  return {
+    async load(id) {
+      let remoteDoc: KemiaoDocument | null = null
+      try {
+        remoteDoc = (await remote.load?.(id)) ?? null
+      } catch {
+        remoteDoc = null
+      }
+      const live = readLiveSnapshot(id)
+      if (live && snapshotIsNewer(live.updatedAt, remoteDoc?.updatedAt)) return live
+      return remoteDoc || live
+    },
+    async save(id, patch, options) {
+      const previous = readLiveSnapshot(id) || createEmptyDocument(id)
+      writeLiveSnapshot({
+        ...previous,
+        ...patch,
+        id,
+        pendingCloud: true,
+        updatedAt: new Date().toISOString(),
+      })
+      try {
+        const saved = await remote.save(id, patch, options)
+        markLiveSnapshotSynced(id)
+        return saved || readLiveSnapshot(id) || previous
+      } catch (error) {
+        if (isNetworkSaveError(error)) {
+          return readLiveSnapshot(id) || previous
+        }
+        throw error
+      }
+    },
+    async create(doc) {
+      writeLiveSnapshot({
+        ...(readLiveSnapshot(LOCAL_DOC_ID) || createEmptyDocument()),
+        ...doc,
+        id: LOCAL_DOC_ID,
+        pendingCloud: true,
+        updatedAt: new Date().toISOString(),
+      })
+      if (!remote.create) throw new Error("无法新建文档")
+      const created = await remote.create(doc)
+      writeLiveSnapshot({ ...created, pendingCloud: false })
+      return created
+    },
+    async remove(id) {
+      await remote.remove?.(id)
+    },
+    async list() {
+      let items: KemiaoDocument[] = []
+      try {
+        items = (await remote.list?.()) || []
+      } catch {
+        items = []
+      }
+      const live = readLiveSnapshot(LOCAL_DOC_ID)
+      if (!live) return items
+      const index = items.findIndex((item) => item.id === live.id || item.id === LOCAL_DOC_ID)
+      if (index >= 0) {
+        if (snapshotIsNewer(live.updatedAt, items[index].updatedAt)) items[index] = live
+      } else {
+        items.unshift(live)
+      }
+      return items
     },
   }
 }

@@ -15,13 +15,22 @@ import {
   documentToStandaloneHtml,
   downloadFileName,
   importTextFile,
+  isBrowserOnline,
+  isNetworkSaveError,
   listSchemeCss,
+  markLiveSnapshotSynced,
+  planRealtimeSave,
+  readLiveSnapshot,
+  realtimeSaveLabel,
   sanitizeContent,
   sanitizeListScheme,
   sanitizePageChrome,
   sanitizeTitle,
+  snapshotIsNewer,
+  writeLiveSnapshot,
   type DocNode,
   type KemiaoDocument,
+  type RealtimeSaveState,
 } from "@kemiaodoc/core"
 import { ListSchemePanel } from "./ListSchemePanel"
 import { PageChromePanel } from "./PageChromePanel"
@@ -72,7 +81,7 @@ export function DocsEditor({
   onCloudCreated,
   className,
 }: DocsEditorProps) {
-  const persist = storage ?? createLocalStorageAdapter()
+  const persist = useMemo(() => storage ?? createLocalStorageAdapter(), [storage])
   const [title, setTitle] = useState(initial.title)
   const [listScheme, setListScheme] = useState(() => sanitizeListScheme(initial.listScheme))
   const [pageChrome, setPageChrome] = useState(() => sanitizePageChrome(initial.pageChrome))
@@ -80,8 +89,9 @@ export function DocsEditor({
   const [chromeOpen, setChromeOpen] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
   const [saveOpen, setSaveOpen] = useState(false)
-  const [status, setStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle")
+  const [status, setStatus] = useState<RealtimeSaveState>("idle")
   const [error, setError] = useState("")
+  const [online, setOnline] = useState(() => isBrowserOnline())
   const [docId, setDocId] = useState(initial.id)
   const imageInput = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -90,12 +100,16 @@ export function DocsEditor({
   const schemeRef = useRef(listScheme)
   const chromeRef = useRef(pageChrome)
   const statusRef = useRef(status)
+  const docIdRef = useRef(docId)
+  const cloudInFlight = useRef(false)
+  const cloudQueued = useRef(false)
   const [, bump] = useState(0)
 
   titleRef.current = title
   schemeRef.current = listScheme
   chromeRef.current = pageChrome
   statusRef.current = status
+  docIdRef.current = docId
 
   const schemeCss = useMemo(() => listSchemeCss(listScheme), [listScheme])
 
@@ -166,9 +180,14 @@ export function DocsEditor({
     const next =
       initial.id === LOCAL_DOC_ID && persist.load
         ? persist.load(LOCAL_DOC_ID)
-        : initial
+        : persist.load
+          ? persist.load(initial.id)
+          : initial
     Promise.resolve(next).then((loaded) => {
-      const doc = loaded || initial
+      const remote = loaded || initial
+      const live = readLiveSnapshot(remote.id) || readLiveSnapshot(LOCAL_DOC_ID)
+      const doc =
+        live && snapshotIsNewer(live.updatedAt, remote.updatedAt) ? live : remote
       if (JSON.stringify(editor.getJSON()) !== JSON.stringify(doc.content)) {
         editor.commands.setContent(doc.content, false)
       }
@@ -176,50 +195,140 @@ export function DocsEditor({
       setListScheme(sanitizeListScheme(doc.listScheme))
       setPageChrome(sanitizePageChrome(doc.pageChrome))
       setDocId(doc.id)
-      setStatus("idle")
+      setStatus(live?.pendingCloud && loggedIn ? "dirty" : "idle")
     })
-  }, [editor, initial, persist])
+  }, [editor, initial, loggedIn, persist])
 
-  const save = useCallback(async () => {
-    if (!editor) return
-    const content = editor.getJSON() as DocNode
-    setStatus("saving")
-    setError("")
-    try {
-      if (!loggedIn || docId === LOCAL_DOC_ID) {
-        await persist.save(LOCAL_DOC_ID, {
+  const persistLocal = useCallback(
+    (pendingCloud: boolean) => {
+      if (!editor) return
+      const content = editor.getJSON() as DocNode
+      writeLiveSnapshot({
+        id: docIdRef.current,
+        title: titleRef.current,
+        content,
+        listScheme: schemeRef.current,
+        pageChrome: chromeRef.current,
+        pendingCloud,
+        updatedAt: new Date().toISOString(),
+      })
+      if (!loggedIn) {
+        void persist.save(LOCAL_DOC_ID, {
           title: titleRef.current,
           content,
           listScheme: schemeRef.current,
           pageChrome: chromeRef.current,
         })
-        setStatus("saved")
+      }
+    },
+    [editor, loggedIn, persist],
+  )
+
+  const persistRemote = useCallback(
+    async (reason: "edit" | "flush" | "reconnect") => {
+      if (!editor) return
+      const onlineNow = isBrowserOnline()
+      const plan = planRealtimeSave({
+        online: onlineNow,
+        cloudEnabled: loggedIn,
+        reason,
+      })
+      persistLocal(loggedIn)
+      if (!plan.writeCloud) {
+        setStatus(loggedIn ? "offline" : "saved")
         return
       }
-      await persist.save(docId, {
-        title: titleRef.current,
-        content,
-        listScheme: schemeRef.current,
-        pageChrome: chromeRef.current,
-      })
-      setStatus("saved")
-    } catch (err) {
-      setStatus("error")
-      setError(err instanceof Error ? err.message : "保存失败")
-    }
-  }, [docId, editor, loggedIn, persist])
+      if (cloudInFlight.current) {
+        cloudQueued.current = true
+        return
+      }
+      cloudInFlight.current = true
+      setStatus("saving")
+      setError("")
+      try {
+        const patch = {
+          title: titleRef.current,
+          content: editor.getJSON() as DocNode,
+          listScheme: schemeRef.current,
+          pageChrome: chromeRef.current,
+        }
+        let id = docIdRef.current
+        if (id === LOCAL_DOC_ID && persist.create) {
+          const created = await persist.create(patch)
+          id = created.id
+          setDocId(created.id)
+          docIdRef.current = created.id
+          writeLiveSnapshot({ ...created, pendingCloud: false })
+          onCloudCreated?.(created.id)
+        } else {
+          await persist.save(id, patch, { keepalive: reason === "flush" })
+        }
+        markLiveSnapshotSynced(id)
+        setStatus("saved")
+      } catch (err) {
+        persistLocal(true)
+        if (isNetworkSaveError(err)) {
+          setStatus("offline")
+          setError("")
+        } else {
+          setStatus("error")
+          setError(err instanceof Error ? err.message : "保存失败")
+        }
+      } finally {
+        cloudInFlight.current = false
+        if (cloudQueued.current) {
+          cloudQueued.current = false
+          void persistRemote("flush")
+        }
+      }
+    },
+    [editor, loggedIn, onCloudCreated, persist, persistLocal],
+  )
 
   const saveNow = useCallback(() => {
-    if (statusRef.current !== "saving") void save()
-  }, [save])
+    persistLocal(loggedIn)
+    void persistRemote("flush")
+  }, [loggedIn, persistLocal, persistRemote])
 
   useEffect(() => {
     if (status !== "dirty") return
+    persistLocal(loggedIn)
+    const plan = planRealtimeSave({
+      online,
+      cloudEnabled: loggedIn,
+      reason: "edit",
+    })
     const timer = window.setTimeout(() => {
-      void save()
-    }, 1200)
+      void persistRemote("edit")
+    }, plan.debounceMs)
     return () => window.clearTimeout(timer)
-  }, [save, status, title, listScheme, pageChrome])
+  }, [loggedIn, online, persistLocal, persistRemote, status, title, listScheme, pageChrome])
+
+  useEffect(() => {
+    const onHidden = () => {
+      persistLocal(loggedIn)
+      if (document.visibilityState === "hidden") void persistRemote("flush")
+    }
+    const onOnline = () => {
+      setOnline(true)
+      void persistRemote("reconnect")
+    }
+    const onOffline = () => {
+      setOnline(false)
+      persistLocal(loggedIn)
+      setStatus((current) => (current === "error" ? current : loggedIn ? "offline" : "saved"))
+    }
+    window.addEventListener("pagehide", onHidden)
+    document.addEventListener("visibilitychange", onHidden)
+    window.addEventListener("online", onOnline)
+    window.addEventListener("offline", onOffline)
+    return () => {
+      window.removeEventListener("pagehide", onHidden)
+      document.removeEventListener("visibilitychange", onHidden)
+      window.removeEventListener("online", onOnline)
+      window.removeEventListener("offline", onOffline)
+    }
+  }, [loggedIn, persistLocal, persistRemote])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -323,18 +432,11 @@ export function DocsEditor({
   })()
 
   const inTable = Boolean(editor?.isActive("table"))
-  const statusText =
-    status === "saving"
-      ? "保存中…"
-      : status === "saved"
-        ? loggedIn && docId !== LOCAL_DOC_ID
-          ? "已保存到云端"
-          : "已写入浏览器"
-        : status === "dirty"
-          ? "有未保存改动"
-          : status === "error"
-            ? "保存失败"
-            : "已就绪"
+  const statusText = realtimeSaveLabel({
+    state: status,
+    cloudEnabled: loggedIn,
+    online,
+  })
 
   return (
     <div className={`kemiaodoc-root ${className || ""}`}>

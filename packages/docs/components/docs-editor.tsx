@@ -51,13 +51,24 @@ import {
   uploadDocsImage,
 } from "@kemiaodoc/docs/lib/docs-client";
 import { loadLocalDocument, saveLocalDocument } from "@kemiaodoc/docs/lib/docs-local";
+import {
+  markDocsLiveSnapshotSynced,
+  pickNewerDocsSource,
+  readDocsLiveSnapshot,
+  writeDocsLiveSnapshot,
+} from "@kemiaodoc/docs/lib/docs-offline";
+import {
+  docsRealtimeSaveLabel,
+  isDocsBrowserOnline,
+  isDocsNetworkSaveError,
+  planDocsRealtimeSave,
+  type DocsRealtimeSaveState,
+} from "@kemiaodoc/docs/lib/docs-realtime";
 import { isDocsSaveHotkey } from "@kemiaodoc/docs/lib/docs-save";
 import { DocsPagePanel } from "@kemiaodoc/docs/components/docs-page-panel";
 import { DocsPrintPreview } from "@kemiaodoc/docs/components/docs-print-preview";
 import { DocsSchemePanel } from "@kemiaodoc/docs/components/docs-scheme-panel";
 import "./docs-editor.css";
-
-const AUTOSAVE_MS = 1200;
 const GUEST_IMAGE_MAX_BYTES = 1.5 * 1024 * 1024;
 
 const TabListKeys = Extension.create({
@@ -77,7 +88,7 @@ type Props = {
   loginHref?: string;
 };
 
-type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
+type SaveState = DocsRealtimeSaveState;
 
 function headingValue(editor: Editor | null): string {
   if (!editor) return "0";
@@ -109,6 +120,7 @@ export function DocsEditor({
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState("");
+  const [online, setOnline] = useState(() => isDocsBrowserOnline());
   const [docId, setDocId] = useState(initial.id);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const openFileRef = useRef<HTMLInputElement>(null);
@@ -117,11 +129,15 @@ export function DocsEditor({
   const schemeRef = useRef(scheme);
   const chromeRef = useRef(pageChrome);
   const saveStateRef = useRef(saveState);
+  const docIdRef = useRef(docId);
+  const cloudInFlight = useRef(false);
+  const cloudQueued = useRef(false);
   const [, setToolbarTick] = useState(0);
   titleRef.current = title;
   schemeRef.current = scheme;
   chromeRef.current = pageChrome;
   saveStateRef.current = saveState;
+  docIdRef.current = docId;
 
   const schemeCss = useMemo(() => buildListSchemeCss(scheme), [scheme]);
 
@@ -199,8 +215,9 @@ export function DocsEditor({
 
   useEffect(() => {
     if (!editor) return;
-    const source =
-      initial.id === DOCS_LOCAL_ID ? loadLocalDocument() : initial;
+    const stored = initial.id === DOCS_LOCAL_ID ? loadLocalDocument() : initial;
+    const live = readDocsLiveSnapshot(initial.id) || readDocsLiveSnapshot(DOCS_LOCAL_ID);
+    const source = pickNewerDocsSource(live, stored);
     const current = JSON.stringify(editor.getJSON());
     const incoming = JSON.stringify(source.content);
     if (current !== incoming) {
@@ -210,50 +227,140 @@ export function DocsEditor({
     setScheme(normalizeListScheme(source.listScheme));
     setPageChrome(normalizePageChrome(source.pageChrome || DEFAULT_DOCS_PAGE_CHROME));
     setDocId(source.id);
-    setSaveState("idle");
-  }, [editor, initial]);
+    setSaveState(live?.pendingCloud && loggedIn ? "dirty" : "idle");
+  }, [editor, initial, loggedIn]);
 
-  const persist = useCallback(async () => {
-    if (!editor) return;
-    const content = editor.getJSON() as DocsJsonNode;
-    setSaveState("saving");
-    setSaveError("");
-    try {
-      if (!loggedIn || docId === DOCS_LOCAL_ID) {
-        saveLocalDocument({
-          title: titleRef.current,
-          content,
-          listScheme: schemeRef.current,
-          pageChrome: chromeRef.current,
-        });
-        setSaveState("saved");
-        return;
-      }
-      await saveDocsDocumentRequest(docId, {
+  const persistLocal = useCallback(
+    (pendingCloud: boolean) => {
+      if (!editor) return;
+      const content = editor.getJSON() as DocsJsonNode;
+      const snapshot = writeDocsLiveSnapshot({
+        id: docIdRef.current,
         title: titleRef.current,
         content,
         listScheme: schemeRef.current,
         pageChrome: chromeRef.current,
+        pendingCloud,
+      }).snapshot;
+      if (docIdRef.current === DOCS_LOCAL_ID || !loggedIn) {
+        saveLocalDocument({
+          title: snapshot.title,
+          content: snapshot.content,
+          listScheme: snapshot.listScheme,
+          pageChrome: snapshot.pageChrome,
+        });
+      }
+    },
+    [editor, loggedIn],
+  );
+
+  const persistCloud = useCallback(
+    async (reason: "edit" | "flush" | "reconnect") => {
+      if (!editor) return;
+      const onlineNow = isDocsBrowserOnline();
+      const plan = planDocsRealtimeSave({
+        online: onlineNow,
+        cloudEnabled: loggedIn,
+        reason,
       });
-      setSaveState("saved");
-    } catch (error) {
-      setSaveState("error");
-      setSaveError(error instanceof Error ? error.message : "保存失败");
-    }
-  }, [docId, editor, loggedIn]);
+      persistLocal(loggedIn);
+      if (!plan.writeCloud) {
+        setSaveState(loggedIn ? "offline" : "saved");
+        return;
+      }
+      if (cloudInFlight.current) {
+        cloudQueued.current = true;
+        return;
+      }
+      cloudInFlight.current = true;
+      setSaveState("saving");
+      setSaveError("");
+      try {
+        const content = editor.getJSON() as DocsJsonNode;
+        const patch = {
+          title: titleRef.current,
+          content,
+          listScheme: schemeRef.current,
+          pageChrome: chromeRef.current,
+        };
+        let id = docIdRef.current;
+        if (id === DOCS_LOCAL_ID) {
+          const created = await createDocsDocumentRequest(patch);
+          id = created.id;
+          setDocId(created.id);
+          docIdRef.current = created.id;
+          writeDocsLiveSnapshot({ ...patch, id, pendingCloud: false });
+        } else {
+          await saveDocsDocumentRequest(id, patch, { keepalive: reason === "flush" });
+        }
+        markDocsLiveSnapshotSynced(id);
+        setSaveState("saved");
+      } catch (error) {
+        persistLocal(true);
+        if (isDocsNetworkSaveError(error)) {
+          setSaveState("offline");
+          setSaveError("");
+        } else {
+          setSaveState("error");
+          setSaveError(error instanceof Error ? error.message : "保存失败");
+        }
+      } finally {
+        cloudInFlight.current = false;
+        if (cloudQueued.current) {
+          cloudQueued.current = false;
+          void persistCloud("flush");
+        }
+      }
+    },
+    [editor, loggedIn, persistLocal],
+  );
 
   const saveNow = useCallback(() => {
-    if (saveStateRef.current === "saving") return;
-    void persist();
-  }, [persist]);
+    persistLocal(loggedIn);
+    void persistCloud("flush");
+  }, [loggedIn, persistCloud, persistLocal]);
 
   useEffect(() => {
     if (saveState !== "dirty") return;
+    persistLocal(loggedIn);
+    const plan = planDocsRealtimeSave({
+      online,
+      cloudEnabled: loggedIn,
+      reason: "edit",
+    });
     const timer = window.setTimeout(() => {
-      void persist();
-    }, AUTOSAVE_MS);
+      void persistCloud("edit");
+    }, plan.debounceMs);
     return () => window.clearTimeout(timer);
-  }, [persist, saveState, title, scheme, pageChrome]);
+  }, [loggedIn, online, persistCloud, persistLocal, saveState, title, scheme, pageChrome]);
+
+  useEffect(() => {
+    const onHidden = () => {
+      persistLocal(loggedIn);
+      if (document.visibilityState === "hidden") void persistCloud("flush");
+    };
+    const onOnline = () => {
+      setOnline(true);
+      void persistCloud("reconnect");
+    };
+    const onOffline = () => {
+      setOnline(false);
+      persistLocal(loggedIn);
+      setSaveState((current) =>
+        current === "error" ? current : loggedIn ? "offline" : "saved",
+      );
+    };
+    window.addEventListener("pagehide", onHidden);
+    document.addEventListener("visibilitychange", onHidden);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("pagehide", onHidden);
+      document.removeEventListener("visibilitychange", onHidden);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [loggedIn, persistCloud, persistLocal]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -386,18 +493,11 @@ export function DocsEditor({
   };
 
   const inTable = Boolean(editor?.isActive("table"));
-  const saveLabel =
-    saveState === "saving"
-      ? "保存中…"
-      : saveState === "saved"
-        ? loggedIn && docId !== DOCS_LOCAL_ID
-          ? "已保存到云端"
-          : "已写入浏览器"
-        : saveState === "dirty"
-          ? "有未保存改动"
-          : saveState === "error"
-            ? "保存失败"
-            : "已就绪";
+  const saveLabel = docsRealtimeSaveLabel({
+    state: saveState,
+    cloudEnabled: loggedIn,
+    online,
+  });
 
   return (
     <div className="surface overflow-hidden rounded-[28px]">

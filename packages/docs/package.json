@@ -17,7 +17,7 @@
     "index.ts"
   ],
   "scripts": {
-    "test": "tsx lib/docs-scheme.test.ts && tsx lib/docs-page.test.ts && tsx lib/docs-save.test.ts"
+    "test": "tsx lib/docs-scheme.test.ts && tsx lib/docs-page.test.ts && tsx lib/docs-save.test.ts && tsx lib/docs-realtime.test.ts && tsx lib/docs-offline.test.ts"
   },
   "peerDependencies": {
     "next": ">=14",

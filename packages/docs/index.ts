@@ -44,6 +44,23 @@ export { wrapStandaloneHtml } from "./lib/docs-standalone-html";
 export { downloadBlob, downloadTextFile } from "./lib/docs-download";
 export { isDocsSaveHotkey } from "./lib/docs-save";
 export {
+  DOCS_CLOUD_DEBOUNCE_MS,
+  docsRealtimeSaveLabel,
+  isDocsBrowserOnline,
+  isDocsNetworkSaveError,
+  isDocsSnapshotNewer,
+  planDocsRealtimeSave,
+  type DocsRealtimeSaveState,
+} from "./lib/docs-realtime";
+export {
+  DOCS_LIVE_SNAPSHOT_PREFIX,
+  markDocsLiveSnapshotSynced,
+  pickNewerDocsSource,
+  readDocsLiveSnapshot,
+  writeDocsLiveSnapshot,
+  type DocsLiveSnapshot,
+} from "./lib/docs-offline";
+export {
   emptyLocalDocument,
   hasLocalDocument,
   loadLocalDocument,
