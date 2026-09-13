@@ -1,0 +1,32 @@
+{
+  "name": "@kemiaodoc/docx",
+  "version": "0.1.0",
+  "description": "科苗文档 Word（.docx）导入导出，供编辑器和其他产品调用。",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@kemiaodoc/core": "workspace:*",
+    "docx": "^9.5.1",
+    "mammoth": "^1.9.1"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
+  }
+}
