@@ -133,6 +133,7 @@ export function DocsEditor({
   const docIdRef = useRef(docId);
   const cloudInFlight = useRef(false);
   const cloudQueued = useRef(false);
+  const loadedKeyRef = useRef<string | null>(null);
   const [, setToolbarTick] = useState(0);
   titleRef.current = title;
   schemeRef.current = scheme;
@@ -216,6 +217,15 @@ export function DocsEditor({
 
   useEffect(() => {
     if (!editor) return;
+    if (loadedKeyRef.current === initial.id) return;
+    if (
+      loadedKeyRef.current === DOCS_LOCAL_ID &&
+      docIdRef.current === initial.id &&
+      initial.id !== DOCS_LOCAL_ID
+    ) {
+      loadedKeyRef.current = initial.id;
+      return;
+    }
     const stored = initial.id === DOCS_LOCAL_ID ? loadLocalDocument() : initial;
     const live =
       readDocsLiveSnapshot(stored.id) ||
@@ -230,6 +240,7 @@ export function DocsEditor({
     setScheme(normalizeListScheme(source.listScheme));
     setPageChrome(normalizePageChrome(source.pageChrome || DEFAULT_DOCS_PAGE_CHROME));
     setDocId(source.id);
+    loadedKeyRef.current = source.id;
     setSaveState(live?.pendingCloud && loggedIn ? "dirty" : "idle");
   }, [editor, initial, loggedIn]);
 

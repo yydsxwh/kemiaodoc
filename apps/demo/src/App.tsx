@@ -39,9 +39,6 @@ export function App() {
           storage={storage}
           docx={docx}
           onNavigateHome={() => setCurrent(null)}
-          onCloudCreated={(id) => {
-            setCurrent((doc) => (doc ? { ...doc, id } : doc))
-          }}
         />
       ) : (
         <DocsWorkspace loggedIn storage={storage} onOpen={setCurrent} />

@@ -105,6 +105,7 @@ export function DocsEditor({
   const docIdRef = useRef(docId)
   const cloudInFlight = useRef(false)
   const cloudQueued = useRef(false)
+  const loadedKeyRef = useRef<string | null>(null)
   const [, bump] = useState(0)
 
   titleRef.current = title
@@ -179,6 +180,15 @@ export function DocsEditor({
 
   useEffect(() => {
     if (!editor) return
+    if (loadedKeyRef.current === initial.id) return
+    if (
+      loadedKeyRef.current === LOCAL_DOC_ID &&
+      docIdRef.current === initial.id &&
+      initial.id !== LOCAL_DOC_ID
+    ) {
+      loadedKeyRef.current = initial.id
+      return
+    }
     const next =
       initial.id === LOCAL_DOC_ID && persist.load
         ? persist.load(LOCAL_DOC_ID)
@@ -203,6 +213,7 @@ export function DocsEditor({
       setPageChrome(sanitizePageChrome(doc.pageChrome))
       setDocId(doc.id)
       docIdRef.current = doc.id
+      loadedKeyRef.current = doc.id
       setStatus(live?.pendingCloud && loggedIn ? "dirty" : "idle")
     })
   }, [editor, initial, loggedIn, persist])
