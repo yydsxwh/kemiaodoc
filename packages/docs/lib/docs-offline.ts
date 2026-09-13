@@ -152,6 +152,20 @@ export function readDocsLiveSnapshot(
   }
 }
 
+export function adoptDocsLiveSnapshot(
+  fromId: string,
+  toId: string,
+  store?: DocsSnapshotStore | null,
+): DocsLiveSnapshot | null {
+  const current = readDocsLiveSnapshot(fromId, store);
+  if (!current) return null;
+  writeDocsLiveSnapshot({ ...current, id: toId, pendingCloud: false }, store);
+  if (fromId !== toId) {
+    resolveStore(store)?.removeItem(docsLiveSnapshotKey(fromId));
+  }
+  return readDocsLiveSnapshot(toId, store);
+}
+
 export function markDocsLiveSnapshotSynced(
   id: string,
   store?: DocsSnapshotStore | null,

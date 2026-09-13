@@ -116,6 +116,18 @@ export function clearLiveSnapshot(id: string, store?: SnapshotStore | null): voi
   resolveStore(store)?.removeItem(liveSnapshotKey(id))
 }
 
+export function adoptLiveSnapshot(
+  fromId: string,
+  toId: string,
+  store?: SnapshotStore | null,
+): LiveSnapshot | null {
+  const current = readLiveSnapshot(fromId, store)
+  if (!current) return null
+  writeLiveSnapshot({ ...current, id: toId, pendingCloud: false }, store)
+  if (fromId !== toId) clearLiveSnapshot(fromId, store)
+  return readLiveSnapshot(toId, store)
+}
+
 export function markLiveSnapshotSynced(id: string, store?: SnapshotStore | null): void {
   const current = readLiveSnapshot(id, store)
   if (!current) return

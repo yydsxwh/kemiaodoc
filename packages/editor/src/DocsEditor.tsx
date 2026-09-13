@@ -18,6 +18,8 @@ import {
   isBrowserOnline,
   isNetworkSaveError,
   listSchemeCss,
+  adoptLiveSnapshot,
+  clearLiveSnapshot,
   markLiveSnapshotSynced,
   planRealtimeSave,
   readLiveSnapshot,
@@ -185,9 +187,14 @@ export function DocsEditor({
           : initial
     Promise.resolve(next).then((loaded) => {
       const remote = loaded || initial
-      const live = readLiveSnapshot(remote.id) || readLiveSnapshot(LOCAL_DOC_ID)
+      const liveSame = readLiveSnapshot(remote.id)
+      const liveLocal =
+        remote.id === LOCAL_DOC_ID ? readLiveSnapshot(LOCAL_DOC_ID) : null
+      const live = liveSame || liveLocal
       const doc =
-        live && snapshotIsNewer(live.updatedAt, remote.updatedAt) ? live : remote
+        live && snapshotIsNewer(live.updatedAt, remote.updatedAt)
+          ? { ...live, id: remote.id }
+          : remote
       if (JSON.stringify(editor.getJSON()) !== JSON.stringify(doc.content)) {
         editor.commands.setContent(doc.content, false)
       }
@@ -195,6 +202,7 @@ export function DocsEditor({
       setListScheme(sanitizeListScheme(doc.listScheme))
       setPageChrome(sanitizePageChrome(doc.pageChrome))
       setDocId(doc.id)
+      docIdRef.current = doc.id
       setStatus(live?.pendingCloud && loggedIn ? "dirty" : "idle")
     })
   }, [editor, initial, loggedIn, persist])
@@ -258,7 +266,9 @@ export function DocsEditor({
           id = created.id
           setDocId(created.id)
           docIdRef.current = created.id
+          adoptLiveSnapshot(LOCAL_DOC_ID, created.id)
           writeLiveSnapshot({ ...created, pendingCloud: false })
+          clearLiveSnapshot(LOCAL_DOC_ID)
           onCloudCreated?.(created.id)
         } else {
           await persist.save(id, patch, { keepalive: reason === "flush" })

@@ -54,6 +54,7 @@ export {
 } from "./lib/docs-realtime";
 export {
   DOCS_LIVE_SNAPSHOT_PREFIX,
+  adoptDocsLiveSnapshot,
   markDocsLiveSnapshotSynced,
   pickNewerDocsSource,
   readDocsLiveSnapshot,

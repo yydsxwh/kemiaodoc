@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { createEmptyDocument } from "./document"
 import {
+  adoptLiveSnapshot,
   createMemorySnapshotStore,
   liveSnapshotKey,
   markLiveSnapshotSynced,
@@ -21,6 +22,9 @@ describe("live snapshot", () => {
     expect(loaded?.pendingCloud).toBe(true)
     markLiveSnapshotSynced("hw-1", store)
     expect(readLiveSnapshot("hw-1", store)?.pendingCloud).toBe(false)
+    adoptLiveSnapshot("hw-1", "cloud-1", store)
+    expect(readLiveSnapshot("hw-1", store)).toBeNull()
+    expect(readLiveSnapshot("cloud-1", store)?.title).toBe("高等数学作业")
   })
 
   it("returns null for missing or broken data", () => {

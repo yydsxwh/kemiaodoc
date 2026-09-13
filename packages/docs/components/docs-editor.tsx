@@ -52,6 +52,7 @@ import {
 } from "@kemiaodoc/docs/lib/docs-client";
 import { loadLocalDocument, saveLocalDocument } from "@kemiaodoc/docs/lib/docs-local";
 import {
+  adoptDocsLiveSnapshot,
   markDocsLiveSnapshotSynced,
   pickNewerDocsSource,
   readDocsLiveSnapshot,
@@ -216,7 +217,9 @@ export function DocsEditor({
   useEffect(() => {
     if (!editor) return;
     const stored = initial.id === DOCS_LOCAL_ID ? loadLocalDocument() : initial;
-    const live = readDocsLiveSnapshot(initial.id) || readDocsLiveSnapshot(DOCS_LOCAL_ID);
+    const live =
+      readDocsLiveSnapshot(stored.id) ||
+      (stored.id === DOCS_LOCAL_ID ? readDocsLiveSnapshot(DOCS_LOCAL_ID) : null);
     const source = pickNewerDocsSource(live, stored);
     const current = JSON.stringify(editor.getJSON());
     const incoming = JSON.stringify(source.content);
@@ -289,6 +292,7 @@ export function DocsEditor({
           id = created.id;
           setDocId(created.id);
           docIdRef.current = created.id;
+          adoptDocsLiveSnapshot(DOCS_LOCAL_ID, created.id);
           writeDocsLiveSnapshot({ ...patch, id, pendingCloud: false });
         } else {
           await saveDocsDocumentRequest(id, patch, { keepalive: reason === "flush" });
