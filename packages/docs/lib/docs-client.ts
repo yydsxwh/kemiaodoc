@@ -1,6 +1,6 @@
-import type { DocsDocumentPayload, DocsJsonNode } from "@kemiaodoc/docs/lib/docs-content";
-import type { DocsPageChrome } from "@kemiaodoc/docs/lib/docs-page";
-import type { DocsListScheme } from "@kemiaodoc/docs/lib/docs-scheme";
+import type { DocsDocumentPayload, DocsJsonNode } from "@andyyyds/docs/lib/docs-content";
+import type { DocsPageChrome } from "@andyyyds/docs/lib/docs-page";
+import type { DocsListScheme } from "@andyyyds/docs/lib/docs-scheme";
 
 async function readJson(res: Response): Promise<unknown> {
   try {
@@ -60,14 +60,12 @@ export async function saveDocsDocumentRequest(
     listScheme?: DocsListScheme;
     pageChrome?: DocsPageChrome;
   },
-  options?: { keepalive?: boolean },
 ): Promise<DocsDocumentPayload> {
   const res = await fetch(`/api/docs/${encodeURIComponent(id)}`, {
     method: "PATCH",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
-    keepalive: Boolean(options?.keepalive),
   });
   const body = await readJson(res);
   if (!res.ok) throw new Error(errorMessage(body, "保存失败"));

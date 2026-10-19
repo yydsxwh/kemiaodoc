@@ -1,7 +1,0 @@
-{
-  "name": "kemiaodoc",
-  "install": "pnpm install",
-  "repositoryDependencies": [
-    "github.com/yydsxwh/Andyyyds"
-  ]
-}

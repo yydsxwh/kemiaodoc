@@ -5,24 +5,23 @@
 import {
   clampDocsTitle,
   defaultDocsTitle,
-  DOCS_LEGACY_LOCAL_STORAGE_KEY,
   DOCS_LOCAL_ID,
   DOCS_LOCAL_STORAGE_KEY,
   emptyDocsContent,
   sanitizeDocsContent,
   type DocsDocumentPayload,
   type DocsJsonNode,
-} from "@kemiaodoc/docs/lib/docs-content";
+} from "@andyyyds/docs/lib/docs-content";
 import {
   DEFAULT_DOCS_PAGE_CHROME,
   normalizePageChrome,
   type DocsPageChrome,
-} from "@kemiaodoc/docs/lib/docs-page";
+} from "@andyyyds/docs/lib/docs-page";
 import {
   DEFAULT_DOCS_LIST_SCHEME,
   normalizeListScheme,
   type DocsListScheme,
-} from "@kemiaodoc/docs/lib/docs-scheme";
+} from "@andyyyds/docs/lib/docs-scheme";
 
 export function emptyLocalDocument(): DocsDocumentPayload {
   const now = new Date().toISOString();
@@ -39,14 +38,7 @@ export function emptyLocalDocument(): DocsDocumentPayload {
 
 export function loadLocalDocument(): DocsDocumentPayload {
   try {
-    let raw = localStorage.getItem(DOCS_LOCAL_STORAGE_KEY);
-    if (!raw) {
-      const legacy = localStorage.getItem(DOCS_LEGACY_LOCAL_STORAGE_KEY);
-      if (legacy) {
-        localStorage.setItem(DOCS_LOCAL_STORAGE_KEY, legacy);
-        raw = legacy;
-      }
-    }
+    const raw = localStorage.getItem(DOCS_LOCAL_STORAGE_KEY);
     if (!raw) return emptyLocalDocument();
     const parsed = JSON.parse(raw) as Partial<DocsDocumentPayload>;
     return {

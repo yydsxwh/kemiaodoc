@@ -9,8 +9,8 @@ import {
   inferDocsTitle,
   sanitizeDocsContent,
   type DocsJsonNode,
-} from "@kemiaodoc/docs/lib/docs-content";
-import { importPlainOrMarkup, titleFromFileName } from "@kemiaodoc/docs/lib/docs-html";
+} from "@andyyyds/docs/lib/docs-content";
+import { importPlainOrMarkup, titleFromFileName } from "@andyyyds/docs/lib/docs-html";
 
 export const DOCS_IMPORT_MAX_BYTES = 8 * 1024 * 1024;
 

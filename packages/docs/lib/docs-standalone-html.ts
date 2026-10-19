@@ -1,11 +1,11 @@
-import { sanitizeDocsContent, type DocsJsonNode } from "@kemiaodoc/docs/lib/docs-content";
-import { docsContentToHtml } from "@kemiaodoc/docs/lib/docs-html";
+import { sanitizeDocsContent, type DocsJsonNode } from "@andyyyds/docs/lib/docs-content";
+import { docsContentToHtml } from "@andyyyds/docs/lib/docs-html";
 import {
   bandCell,
   normalizePageChrome,
   type DocsPageChrome,
-} from "@kemiaodoc/docs/lib/docs-page";
-import { buildListSchemeCss, normalizeListScheme, type DocsListScheme } from "@kemiaodoc/docs/lib/docs-scheme";
+} from "@andyyyds/docs/lib/docs-page";
+import { buildListSchemeCss, normalizeListScheme, type DocsListScheme } from "@andyyyds/docs/lib/docs-scheme";
 
 function escapeHtml(text: string): string {
   return text

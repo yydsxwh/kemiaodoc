@@ -1,17 +1,14 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { DocsDocumentPayload } from "@kemiaodoc/docs/lib/docs-content";
-import { createDocsDocumentRequest } from "@kemiaodoc/docs/lib/docs-client";
-import { DocsLink } from "@kemiaodoc/docs/components/docs-link";
-import { docsNavigate } from "@kemiaodoc/docs/lib/docs-navigation";
+import type { DocsDocumentPayload } from "@andyyyds/docs/lib/docs-content";
+import { createDocsDocumentRequest } from "@andyyyds/docs/lib/docs-client";
 
 type Props = {
   loggedIn: boolean;
   documents: DocsDocumentPayload[];
-  homeHref?: string;
-  localHref?: string;
-  loginHref?: string;
 };
 
 function formatTime(iso: string): string {
@@ -27,13 +24,8 @@ function formatTime(iso: string): string {
   }
 }
 
-export function DocsHome({
-  loggedIn,
-  documents,
-  homeHref = "/products/docs",
-  localHref = "/products/docs/local",
-  loginHref = "/login?next=/products/docs",
-}: Props) {
+export function DocsHome({ loggedIn, documents }: Props) {
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -42,7 +34,7 @@ export function DocsHome({
     setError("");
     try {
       const doc = await createDocsDocumentRequest({ title: "未命名文档" });
-      docsNavigate(`${homeHref}/${doc.id}`);
+      router.push(`/products/docs/${doc.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "新建失败");
       setBusy(false);
@@ -62,13 +54,13 @@ export function DocsHome({
             {busy ? "创建中…" : "新建云端文档"}
           </button>
         ) : (
-          <DocsLink href={loginHref} className="btn btn-primary min-h-11 px-4">
+          <Link href="/login?next=/products/docs" className="btn btn-primary min-h-11 px-4">
             登录后新建云端文档
-          </DocsLink>
+          </Link>
         )}
-        <DocsLink href={localHref} className="btn btn-secondary min-h-11 px-4">
+        <Link href="/products/docs/local" className="btn btn-secondary min-h-11 px-4">
           打开浏览器草稿
-        </DocsLink>
+        </Link>
       </div>
       {error ? <p className="text-sm text-[var(--fire)]">{error}</p> : null}
 
@@ -77,15 +69,15 @@ export function DocsHome({
           <ul className="grid gap-3">
             {documents.map((doc) => (
               <li key={doc.id}>
-                <DocsLink
-                  href={`${homeHref}/${doc.id}`}
+                <Link
+                  href={`/products/docs/${doc.id}`}
                   className="surface block rounded-[24px] p-4 transition hover:-translate-y-0.5 sm:p-5"
                 >
                   <h2 className="text-lg font-semibold text-[var(--ink)]">{doc.title}</h2>
                   <p className="mt-1 text-xs text-[var(--muted)]">
                     更新于 {formatTime(doc.updatedAt)}
                   </p>
-                </DocsLink>
+                </Link>
               </li>
             ))}
           </ul>
@@ -94,7 +86,7 @@ export function DocsHome({
         )
       ) : (
         <p className="text-sm leading-6 text-[var(--muted)]">
-          未登录也可以先写，稿会实时存在这台电脑。登录后会边写边同步云端，关页或死机也不容易丢。
+          未登录也可以先在浏览器里写；换设备或清缓存会丢。登录后可保存多篇到云端。
         </p>
       )}
     </div>

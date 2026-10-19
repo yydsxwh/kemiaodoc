@@ -6,15 +6,15 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { docsContentToHtml } from "@kemiaodoc/docs/lib/docs-html";
-import { isWechatBrowser } from "@kemiaodoc/docs/lib/docs-download";
+import { docsContentToHtml } from "@andyyyds/docs/lib/docs-html";
+import { isWechatBrowser } from "@andyyyds/docs/lib/docs-download";
 import {
   bandCell,
   normalizePageChrome,
   type DocsPageChrome,
-} from "@kemiaodoc/docs/lib/docs-page";
-import { buildListSchemeCss, type DocsListScheme } from "@kemiaodoc/docs/lib/docs-scheme";
-import type { DocsJsonNode } from "@kemiaodoc/docs/lib/docs-content";
+} from "@andyyyds/docs/lib/docs-page";
+import { buildListSchemeCss, type DocsListScheme } from "@andyyyds/docs/lib/docs-scheme";
+import type { DocsJsonNode } from "@andyyyds/docs/lib/docs-content";
 
 type Props = {
   title: string;

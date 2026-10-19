@@ -4,10 +4,10 @@
  */
 
 import { NextResponse } from "next/server";
-import { sanitizeDocsContent } from "@kemiaodoc/docs/lib/docs-content";
-import { exportDocsDocx } from "@kemiaodoc/docs/lib/docs-export";
-import { clampDocsTitle } from "@kemiaodoc/docs/lib/docs-content";
-import { normalizePageChrome, safeDownloadName } from "@kemiaodoc/docs/lib/docs-page";
+import { sanitizeDocsContent } from "@andyyyds/docs/lib/docs-content";
+import { exportDocsDocx } from "@andyyyds/docs/lib/docs-export";
+import { clampDocsTitle } from "@andyyyds/docs/lib/docs-content";
+import { normalizePageChrome, safeDownloadName } from "@andyyyds/docs/lib/docs-page";
 
 export const runtime = "nodejs";
 

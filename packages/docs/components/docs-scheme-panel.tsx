@@ -17,7 +17,7 @@ import {
   type DocsLevelSpec,
   type DocsListScheme,
   type DocsNumberStyle,
-} from "@kemiaodoc/docs/lib/docs-scheme";
+} from "@andyyyds/docs/lib/docs-scheme";
 
 type Props = {
   scheme: DocsListScheme;

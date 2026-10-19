@@ -6,20 +6,18 @@ import {
   DEFAULT_DOCS_PAGE_CHROME,
   normalizePageChrome,
   type DocsPageChrome,
-} from "@kemiaodoc/docs/lib/docs-page";
+} from "@andyyyds/docs/lib/docs-page";
 import {
   DEFAULT_DOCS_LIST_SCHEME,
   normalizeListScheme,
   type DocsListScheme,
-} from "@kemiaodoc/docs/lib/docs-scheme";
+} from "@andyyyds/docs/lib/docs-scheme";
 
 export const DOCS_TITLE_MAX_CHARS = 80;
 export const DOCS_CONTENT_MAX_CHARS = 800_000;
 export const DOCS_MAX_PER_USER = 80;
 export const DOCS_LOCAL_ID = "local";
-export const DOCS_LOCAL_STORAGE_KEY = "kemiaodoc-local-v1";
-/** 歪歪滴艾斯网页文档使用的浏览器草稿键，读取时自动迁移。 */
-export const DOCS_LEGACY_LOCAL_STORAGE_KEY = "yyds-docs-local-v1";
+export const DOCS_LOCAL_STORAGE_KEY = "yyds-docs-local-v1";
 
 export const DOCS_ALLOWED_NODE_TYPES = new Set([
   "doc",

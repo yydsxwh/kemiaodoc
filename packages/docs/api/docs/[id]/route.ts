@@ -4,16 +4,16 @@
  */
 
 import { NextResponse } from "next/server";
-import { getDocsSession } from "@kemiaodoc/docs/lib/docs-host";
-import { DOCS_LOCAL_ID, sanitizeDocsContent } from "@kemiaodoc/docs/lib/docs-content";
-import { normalizePageChrome } from "@kemiaodoc/docs/lib/docs-page";
-import { normalizeListScheme } from "@kemiaodoc/docs/lib/docs-scheme";
+import { getSession } from "@andyyyds/shared/auth";
+import { DOCS_LOCAL_ID, sanitizeDocsContent } from "@andyyyds/docs/lib/docs-content";
+import { normalizePageChrome } from "@andyyyds/docs/lib/docs-page";
+import { normalizeListScheme } from "@andyyyds/docs/lib/docs-scheme";
 import {
   deleteDocsDocument,
   DocsNotFoundError,
   getDocsDocument,
   updateDocsDocument,
-} from "@kemiaodoc/docs/lib/docs-store";
+} from "@andyyyds/docs/lib/docs-store";
 
 export const runtime = "nodejs";
 
@@ -24,7 +24,7 @@ function isReservedId(id: string): boolean {
 }
 
 export async function GET(_req: Request, ctx: Ctx) {
-  const session = await getDocsSession();
+  const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
@@ -44,7 +44,7 @@ export async function GET(_req: Request, ctx: Ctx) {
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
-  const session = await getDocsSession();
+  const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
@@ -83,7 +83,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
 }
 
 export async function DELETE(_req: Request, ctx: Ctx) {
-  const session = await getDocsSession();
+  const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }

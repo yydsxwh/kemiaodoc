@@ -17,12 +17,12 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import { extractPlainText, type DocsJsonNode } from "@kemiaodoc/docs/lib/docs-content";
+import { extractPlainText, type DocsJsonNode } from "@andyyyds/docs/lib/docs-content";
 import {
   normalizePageChrome,
   type DocsPageChrome,
   type DocsPageNumberSlot,
-} from "@kemiaodoc/docs/lib/docs-page";
+} from "@andyyyds/docs/lib/docs-page";
 
 const HEADING_MAP: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
   1: HeadingLevel.HEADING_1,

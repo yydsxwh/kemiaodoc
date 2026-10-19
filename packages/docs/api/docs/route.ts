@@ -4,20 +4,20 @@
  */
 
 import { NextResponse } from "next/server";
-import { getDocsSession } from "@kemiaodoc/docs/lib/docs-host";
-import { sanitizeDocsContent } from "@kemiaodoc/docs/lib/docs-content";
-import { normalizePageChrome } from "@kemiaodoc/docs/lib/docs-page";
-import { normalizeListScheme } from "@kemiaodoc/docs/lib/docs-scheme";
+import { getSession } from "@andyyyds/shared/auth";
+import { sanitizeDocsContent } from "@andyyyds/docs/lib/docs-content";
+import { normalizePageChrome } from "@andyyyds/docs/lib/docs-page";
+import { normalizeListScheme } from "@andyyyds/docs/lib/docs-scheme";
 import {
   createDocsDocument,
   DocsLimitError,
   listDocsDocuments,
-} from "@kemiaodoc/docs/lib/docs-store";
+} from "@andyyyds/docs/lib/docs-store";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  const session = await getDocsSession();
+  const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
@@ -26,7 +26,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const session = await getDocsSession();
+  const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }

@@ -6,7 +6,7 @@ import {
   DOCS_PAGE_TEXT_MAX,
   type DocsPageChrome,
   type DocsPageNumberSlot,
-} from "@kemiaodoc/docs/lib/docs-page";
+} from "@andyyyds/docs/lib/docs-page";
 
 type Props = {
   chrome: DocsPageChrome;

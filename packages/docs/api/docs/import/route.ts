@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import {
   DOCS_IMPORT_MAX_BYTES,
   importOfficeBuffer,
-} from "@kemiaodoc/docs/lib/docs-import";
+} from "@andyyyds/docs/lib/docs-import";
 
 export const runtime = "nodejs";
 

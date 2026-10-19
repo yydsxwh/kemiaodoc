@@ -8,7 +8,7 @@ import {
   extractPlainText,
   sanitizeDocsContent,
   type DocsJsonNode,
-} from "@kemiaodoc/docs/lib/docs-content";
+} from "@andyyyds/docs/lib/docs-content";
 
 function escapeHtml(text: string): string {
   return text

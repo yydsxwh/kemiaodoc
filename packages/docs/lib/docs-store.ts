@@ -1,4 +1,4 @@
-import { getDocsPrisma } from "@kemiaodoc/docs/lib/docs-host";
+import { prisma } from "@andyyyds/shared/db";
 import {
   clampDocsTitle,
   DOCS_MAX_PER_USER,
@@ -7,17 +7,17 @@ import {
   serializeDocsContent,
   type DocsDocumentPayload,
   type DocsJsonNode,
-} from "@kemiaodoc/docs/lib/docs-content";
+} from "@andyyyds/docs/lib/docs-content";
 import {
   DEFAULT_DOCS_PAGE_CHROME,
   normalizePageChrome,
   type DocsPageChrome,
-} from "@kemiaodoc/docs/lib/docs-page";
+} from "@andyyyds/docs/lib/docs-page";
 import {
   DEFAULT_DOCS_LIST_SCHEME,
   normalizeListScheme,
   type DocsListScheme,
-} from "@kemiaodoc/docs/lib/docs-scheme";
+} from "@andyyyds/docs/lib/docs-scheme";
 
 export class DocsLimitError extends Error {
   constructor() {
@@ -33,12 +33,8 @@ export class DocsNotFoundError extends Error {
   }
 }
 
-function db() {
-  return getDocsPrisma();
-}
-
 export async function listDocsDocuments(userId: string): Promise<DocsDocumentPayload[]> {
-  const rows = await db().docsDocument.findMany({
+  const rows = await prisma.docsDocument.findMany({
     where: { userId },
     orderBy: { updatedAt: "desc" },
     take: DOCS_MAX_PER_USER,
@@ -50,7 +46,7 @@ export async function getDocsDocument(
   userId: string,
   id: string,
 ): Promise<DocsDocumentPayload> {
-  const row = await db().docsDocument.findFirst({
+  const row = await prisma.docsDocument.findFirst({
     where: { id, userId },
   });
   if (!row) throw new DocsNotFoundError();
@@ -66,11 +62,11 @@ export async function createDocsDocument(
     pageChrome?: DocsPageChrome;
   },
 ): Promise<DocsDocumentPayload> {
-  const count = await db().docsDocument.count({ where: { userId } });
+  const count = await prisma.docsDocument.count({ where: { userId } });
   if (count >= DOCS_MAX_PER_USER) throw new DocsLimitError();
 
   const content = input?.content ? input.content : emptyDocsContent();
-  const row = await db().docsDocument.create({
+  const row = await prisma.docsDocument.create({
     data: {
       userId,
       title: clampDocsTitle(input?.title),
@@ -96,7 +92,7 @@ export async function updateDocsDocument(
     pageChrome?: DocsPageChrome;
   },
 ): Promise<DocsDocumentPayload> {
-  const existing = await db().docsDocument.findFirst({
+  const existing = await prisma.docsDocument.findFirst({
     where: { id, userId },
     select: { id: true },
   });
@@ -117,7 +113,7 @@ export async function updateDocsDocument(
     data.pageChrome = JSON.stringify(normalizePageChrome(input.pageChrome));
   }
 
-  const row = await db().docsDocument.update({
+  const row = await prisma.docsDocument.update({
     where: { id },
     data,
   });
@@ -125,7 +121,7 @@ export async function updateDocsDocument(
 }
 
 export async function deleteDocsDocument(userId: string, id: string): Promise<void> {
-  const result = await db().docsDocument.deleteMany({
+  const result = await prisma.docsDocument.deleteMany({
     where: { id, userId },
   });
   if (result.count === 0) throw new DocsNotFoundError();
