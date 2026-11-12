@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-20",
+  "sourceSha": "3686fed59ecbc650157d096733db98954f418a06",
+  "environment": "isolated local Windows; synthetic per-product SQLite; manually issued test-only JWTs",
+  "checks": {
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "sourceAndHostTests": "3 passed",
+    "dependencyLockConsistency": "passed; npm ci --dry-run in an empty staging directory",
+    "http": [
+      {
+        "repo": "kemiaodoc",
+        "test": "health returns current source SHA",
+        "status": "passed"
+      },
+      {
+        "repo": "kemiaodoc",
+        "test": "product entry renders without main process",
+        "status": "passed"
+      },
+      {
+        "repo": "kemiaodoc",
+        "test": "legacy local password login absent",
+        "status": "passed"
+      },
+      {
+        "repo": "kemiaodoc",
+        "test": "anonymous session has no identity",
+        "status": "passed"
+      },
+      {
+        "repo": "kemiaodoc",
+        "test": "two authenticated users remain distinct",
+        "status": "passed"
+      },
+      {
+        "repo": "kemiaodoc",
+        "test": "anonymous mutation denied",
+        "status": "passed"
+      },
+      {
+        "repo": "kemiaodoc",
+        "test": "document owner persists content; another user cannot read or overwrite",
+        "status": "passed"
+      }
+    ]
+  },
+  "notVerified": [
+    "real Account OIDC callback and client registration",
+    "browser multi-tab and offline recovery",
+    "production data or attachment migration",
+    "real payments, refunds and Platform integration",
+    "KKChat authority consolidation",
+    "Linux clean install and GitHub CI",
+    "production deployment"
+  ],
+  "deployed": false
+}

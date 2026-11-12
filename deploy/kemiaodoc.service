@@ -1,0 +1,14 @@
+[Unit]
+Description=科苗文档
+After=network.target
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/kemiaodoc/current
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/yyds/kemiaodoc.env
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+NoNewPrivileges=true
+[Install]
+WantedBy=multi-user.target
