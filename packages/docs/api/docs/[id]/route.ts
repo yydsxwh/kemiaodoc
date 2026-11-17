@@ -10,6 +10,7 @@ import { normalizePageChrome } from "@andyyyds/docs/lib/docs-page";
 import { normalizeListScheme } from "@andyyyds/docs/lib/docs-scheme";
 import {
   deleteDocsDocument,
+  DocsConflictError,
   DocsNotFoundError,
   getDocsDocument,
   updateDocsDocument,
@@ -57,6 +58,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
     content?: unknown;
     listScheme?: unknown;
     pageChrome?: unknown;
+    baseUpdatedAt?: string;
+    force?: boolean;
   } = {};
   try {
     body = (await req.json()) as typeof body;
@@ -71,9 +74,17 @@ export async function PATCH(req: Request, ctx: Ctx) {
         body.listScheme === undefined ? undefined : normalizeListScheme(body.listScheme),
       pageChrome:
         body.pageChrome === undefined ? undefined : normalizePageChrome(body.pageChrome),
+      baseUpdatedAt: body.baseUpdatedAt,
+      force: body.force === true,
     });
     return NextResponse.json(doc);
   } catch (error) {
+    if (error instanceof DocsConflictError) {
+      return NextResponse.json(
+        { error: error.message, code: "DOCS_CONFLICT" },
+        { status: 409, headers: { "Cache-Control": "private, no-store" } },
+      );
+    }
     if (error instanceof DocsNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }

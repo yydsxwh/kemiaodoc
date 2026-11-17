@@ -20,7 +20,16 @@ const FIRST_PARTY_HOSTS = new Set([
   "yydsxwh.com",
   "www.yydsxwh.com",
   "account.yydsxwh.com",
+  "kemiao.net",
+  "www.kemiao.net",
+  "account.kemiao.net",
 ]);
+
+/**
+ * 这些主机现在只做兼容跳转，不再运行主站进程。
+ * 若 OAuth 回调仍写成它们，浏览器会被 nginx 送回当前站点，事务 Cookie 却写不上去，登录入口会来回跳。
+ */
+const LEGACY_SITE_HOSTS = new Set(["yydsxwh.com", "www.yydsxwh.com"]);
 
 export type AccountOidcConfig = {
   issuer: string;
@@ -187,13 +196,52 @@ function extraAllowedHosts(): Set<string> {
   return hosts;
 }
 
+function configuredPublicOrigin(publicSiteUrl?: string): string {
+  const candidates = [
+    publicSiteUrl,
+    process.env.NEXT_PUBLIC_SITE_URL,
+    process.env.SITE_URL,
+  ];
+  for (const candidate of candidates) {
+    const raw = (candidate || "").trim().replace(/\/+$/, "");
+    if (!raw) continue;
+    try {
+      const origin = new URL(raw.includes("://") ? raw : `https://${raw}`).origin;
+      const host = new URL(origin).hostname.toLowerCase();
+      if (!isAllowedCallbackOrigin(origin) || LEGACY_SITE_HOSTS.has(host)) continue;
+      return origin;
+    } catch {
+      continue;
+    }
+  }
+  return "";
+}
+
 export function resolveAccountRedirectUri(input: {
   envRedirectUri?: string;
   requestOrigin?: string;
   publicSiteUrl?: string;
 }): string {
   const fromEnv = (input.envRedirectUri || "").trim();
-  if (fromEnv) return fromEnv;
+  if (fromEnv) {
+    try {
+      const envHost = new URL(fromEnv).hostname.toLowerCase();
+      const live = configuredPublicOrigin(input.publicSiteUrl);
+      const liveHost = live ? new URL(live).hostname.toLowerCase() : "";
+      // 登记值仍是旧域名时，改用当前公网站点上已经登记过的同一条回调路径。
+      if (
+        live &&
+        LEGACY_SITE_HOSTS.has(envHost) &&
+        liveHost &&
+        !LEGACY_SITE_HOSTS.has(liveHost)
+      ) {
+        return `${live}/api/auth/callback`;
+      }
+    } catch {
+      return fromEnv;
+    }
+    return fromEnv;
+  }
   const origin = (input.requestOrigin || input.publicSiteUrl || "").replace(
     /\/+$/,
     "",
@@ -255,6 +303,8 @@ export function buildAuthorizeUrl(
   config: AccountOidcConfig,
   tx: Pick<AccountOidcTransaction, "state" | "nonce" | "codeVerifier"> & {
     codeChallenge: string;
+    /** 只有 login 会写进授权地址，用来在当前标签页再登一个账号。 */
+    prompt?: "login";
   },
 ): URL {
   const authorize = new URL("/api/oauth/authorize", `${config.issuer}/`);
@@ -266,6 +316,7 @@ export function buildAuthorizeUrl(
   authorize.searchParams.set("nonce", tx.nonce);
   authorize.searchParams.set("code_challenge", tx.codeChallenge);
   authorize.searchParams.set("code_challenge_method", "S256");
+  if (tx.prompt === "login") authorize.searchParams.set("prompt", "login");
   return authorize;
 }
 

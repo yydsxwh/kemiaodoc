@@ -58,6 +58,9 @@ export type SessionUser = {
   rolePending: boolean;
   /** 大学论坛最近进入/认证的高校分区；空表示尚未加入 */
   forumUniversityId: string;
+  /** 常驻大学。空字符串表示还没设置，此时可读旧的 forumUniversityId。 */
+  forumHomeUniversityId: string;
+  forumCrossSchoolUntil: string | null;
   /** 本科/研究生实名认证已通过的高校 id */
   forumVerifiedUniversityIds: string[];
   forumSchoolSlots: Array<{
@@ -156,6 +159,8 @@ export async function getSession(): Promise<SessionUser | null> {
         roleApplicationStatus: true,
         sessionEpoch: true,
         forumUniversityId: true,
+        forumHomeUniversityId: true,
+        forumCrossSchoolUntil: true,
         forumSchoolVerifications: {
           select: {
             universityId: true,
@@ -194,6 +199,8 @@ async function sessionFromToken(token: string, permissionRoles: Role[]): Promise
         roleApplicationStatus: true,
         sessionEpoch: true,
         forumUniversityId: true,
+        forumHomeUniversityId: true,
+        forumCrossSchoolUntil: true,
         forumSchoolVerifications: {
           select: { universityId: true, degreeLevel: true, status: true },
         },
@@ -219,6 +226,8 @@ function sessionFromUser(
     requestedRole: string;
     roleApplicationStatus: string;
     forumUniversityId: string | null;
+    forumHomeUniversityId: string | null;
+    forumCrossSchoolUntil: Date | null;
     forumSchoolVerifications: Array<{ universityId: string; degreeLevel: string; status: string }>;
   },
   permissionRoles: Role[] | null,
@@ -250,6 +259,8 @@ function sessionFromUser(
       roleApplicationStatus: user.roleApplicationStatus || "NONE",
       rolePending: isRoleApplicationPending(user.roleApplicationStatus || ""),
       forumUniversityId: user.forumUniversityId || "",
+      forumHomeUniversityId: user.forumHomeUniversityId || "",
+      forumCrossSchoolUntil: user.forumCrossSchoolUntil ? user.forumCrossSchoolUntil.toISOString() : null,
       forumVerifiedUniversityIds: [
         ...new Set(
           forumSchoolSlots

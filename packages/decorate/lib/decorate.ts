@@ -152,7 +152,20 @@ export type DecorateRevision = {
   snapshot: DecorateSnapshot;
 };
 
-export const DEFAULT_LOGO_URL = "/brand/logo.png";
+/** 公司品牌名。Logo 原图只写「颗秒」，站名用文本显示，不画进图里。 */
+export const BRAND_NAME = "颗秒科技";
+
+/** 页头使用的完整彩色圆标。由 clear.png 裁去留白后生成，见 scripts/render-kemiao-brand.mjs。 */
+export const DEFAULT_LOGO_URL = "/brand/kemiao-v1/header.webp";
+
+/** 浏览器标签使用中央徽记。192/512 的完整圆标不放进 favicon，避免缩成彩点。 */
+export const BRAND_ICONS = {
+  ico: "/brand/kemiao-v1/favicon.ico",
+  png16: "/brand/kemiao-v1/favicon-16.png",
+  png32: "/brand/kemiao-v1/favicon-32.png",
+  png48: "/brand/kemiao-v1/favicon-48.png",
+  apple: "/brand/kemiao-v1/apple-touch-icon.png",
+} as const;
 
 /** 首页主视觉：本地 public/covers，与课程封面图库一致 */
 const DEFAULT_HERO_IMAGE = DEFAULT_SITE_HERO_URL;
@@ -220,9 +233,9 @@ export const DEFAULT_DECORATE: DecorateConfig = {
   logoUrl: DEFAULT_LOGO_URL,
   logoHref: "",
   logoOpenInNewTab: false,
-  siteName: "歪歪艾斯",
-  brandName: "歪歪艾斯",
-  showBrandText: false,
+  siteName: BRAND_NAME,
+  brandName: BRAND_NAME,
+  showBrandText: true,
   heroHeadline: "连接学习、知识、人与数字产品",
   heroSubtext:
     "从学业辅导到课程资料、知识社区与软件服务。一个账号，进入公司的产品与服务。",
@@ -376,15 +389,20 @@ function normalizeAnnouncement(raw: Partial<DecorateAnnouncement> | undefined): 
   };
 }
 
+function legacyBrandText(value: string) {
+  return value.replaceAll("歪歪滴艾斯", BRAND_NAME).replaceAll("歪歪艾斯", BRAND_NAME);
+}
+
 function normalizeSeo(raw: Partial<DecorateSeo> | undefined): DecorateSeo {
+  const ogImage = normalizeOptionalHref(raw?.ogImage);
   return {
-    title: String(raw?.title || "").trim().slice(0, 120),
-    description: String(raw?.description || "").trim().slice(0, 300),
-    ogTitle: String(raw?.ogTitle || "").trim().slice(0, 120),
-    ogDescription: String(raw?.ogDescription || "").trim().slice(0, 300),
-    ogImage: normalizeOptionalHref(raw?.ogImage),
+    title: legacyBrandText(String(raw?.title || "").trim()).slice(0, 120),
+    description: legacyBrandText(String(raw?.description || "").trim()).slice(0, 300),
+    ogTitle: legacyBrandText(String(raw?.ogTitle || "").trim()).slice(0, 120),
+    ogDescription: legacyBrandText(String(raw?.ogDescription || "").trim()).slice(0, 300),
+    ogImage: ogImage === "/brand/logo.png" ? DEFAULT_LOGO_URL : ogImage,
     canonical: normalizeOptionalHref(raw?.canonical),
-    organizationName: String(raw?.organizationName || "").trim().slice(0, 80),
+    organizationName: legacyBrandText(String(raw?.organizationName || "").trim()).slice(0, 80),
   };
 }
 
@@ -456,24 +474,31 @@ export function parseDecorate(raw: string | null | undefined): DecorateConfig {
           .filter((b) => b.url)
       : DEFAULT_DECORATE.banners;
 
-    const brandName =
-      (parsed.brandName || DEFAULT_DECORATE.brandName).trim() || "歪歪艾斯";
+    const storedBrand = (parsed.brandName || "").trim();
+    const storedSite = (parsed.siteName || "").trim();
+    const brandName = legacyBrandText(storedBrand || DEFAULT_DECORATE.brandName) || BRAND_NAME;
+    const siteName = legacyBrandText(storedSite || brandName || DEFAULT_DECORATE.siteName) || BRAND_NAME;
+    const storedLogo = (parsed.logoUrl || "").trim();
+    const logoUrl =
+      !storedLogo || storedLogo === "/brand/logo.png" ? DEFAULT_LOGO_URL : storedLogo;
+    // 旧横版字标自带站名，文字开关常常是关的。两边都还是旧名时，圆标旁边要打开站名。
+    const legacyName = (value: string) =>
+      !value || value === "歪歪滴艾斯" || value === "歪歪艾斯";
+    const migratingLegacyBrand = legacyName(storedBrand) && legacyName(storedSite);
     const theme = resolveThemeFields(parsed);
     const heroCopy = resolveStoredHeroCopy(parsed);
     return {
-      logoUrl: (parsed.logoUrl || DEFAULT_DECORATE.logoUrl).trim() || DEFAULT_LOGO_URL,
+      logoUrl,
       logoHref: normalizeOptionalHref(parsed.logoHref),
       logoOpenInNewTab:
         typeof parsed.logoOpenInNewTab === "boolean"
           ? parsed.logoOpenInNewTab
           : false,
-      siteName:
-        (parsed.siteName || brandName || DEFAULT_DECORATE.siteName).trim() ||
-        DEFAULT_DECORATE.siteName,
+      siteName,
       brandName,
       showBrandText:
         typeof parsed.showBrandText === "boolean"
-          ? parsed.showBrandText
+          ? parsed.showBrandText || migratingLegacyBrand
           : DEFAULT_DECORATE.showBrandText,
       heroHeadline: heroCopy.heroHeadline,
       heroSubtext: heroCopy.heroSubtext,

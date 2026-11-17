@@ -3,6 +3,8 @@
  * 既有 palette id 保持稳定，已保存的 decorateJson 可继续解析。
  */
 
+import { uniqueById } from "./theme-list";
+
 export type ThemePaletteTokens = {
   bg: string;
   bgDeep: string;
@@ -1851,6 +1853,25 @@ const NEW_PALETTES: ThemePalette[] = [
     fireRgb: "245, 158, 11",
     card: "rgba(255, 255, 255, 0.9)",
   }),
+  // 品牌小字用还能看清的浅泻湖色。按钮填充另在 CSS 里做成更浅的果冻玻璃，不把正文墨色改浅。
+  createPalette({
+    id: "tahiti-jelly-sea",
+    name: "大溪地·果冻海",
+    tagline: "浅泻湖果冻玻璃按钮 · 正文墨色与已保存背景不动",
+    category: "island",
+    bg: "#fff9fc",
+    bgDeep: "#ffe8f1",
+    ink: "#3b1f2b",
+    muted: "#8a6a76",
+    brand: "#0e7c96",
+    brandStrong: "#0b6880",
+    fire: "#38bdf8",
+    fireStrong: "#0ea5e9",
+    inkRgb: "59, 31, 43",
+    brandRgb: "14, 124, 150",
+    fireRgb: "56, 189, 248",
+    card: "rgba(255, 255, 255, 0.88)",
+  }),
   createPalette({
     id: "island-borabora",
     name: "波拉波拉泻湖",
@@ -2077,8 +2098,12 @@ export const THEME_PALETTES: ThemePalette[] = [
 export function palettesInCategory(
   category: ThemePaletteCategory | "all",
 ): ThemePalette[] {
-  if (category === "all") return THEME_PALETTES;
-  return THEME_PALETTES.filter((p) => p.category === category);
+  const source =
+    category === "all"
+      ? THEME_PALETTES
+      : THEME_PALETTES.filter((p) => p.category === category);
+  // 返回副本。调用方 push 不能把配色再写回主题库。
+  return uniqueById(source);
 }
 
 export function categoryLabel(category: ThemePaletteCategory): string {

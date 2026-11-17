@@ -327,7 +327,21 @@ export const DEFAULT_TRUST_ITEMS: HomeTrustItem[] = [
   { id: "clients", text: "Web、Android 与 Windows", enabled: true },
 ];
 
-export const DEFAULT_BUSINESSES: HomeBusiness[] = [
+/** 访客看到的统一商城。旧 /shop 仍保留给存量页面和订单，不在这里被删掉。 */
+export const MALL_PUBLIC_HREF = "/mall";
+
+/**
+ * 只把缺省或旧默认地址 /shop 解析到市集。
+ * 站长改过的其它地址（包括 /shop/某商品）保持原样。
+ */
+export function publicMallHref(href: string | undefined) {
+  const value = String(href || "").trim();
+  if (!value || value === "/shop" || value === "/shop/") return MALL_PUBLIC_HREF;
+  return value;
+}
+
+/** 2026-10 之前的首页业务卡。仅当四张卡仍是这组原文时，才换成下面的四个快捷入口。 */
+const LEGACY_DEFAULT_BUSINESSES: HomeBusiness[] = [
   {
     key: "academic",
     title: "学业辅导",
@@ -374,6 +388,60 @@ export const DEFAULT_BUSINESSES: HomeBusiness[] = [
   },
 ];
 
+export const DEFAULT_BUSINESSES: HomeBusiness[] = [
+  {
+    key: "courses",
+    title: "找课程",
+    summary: "按主题学习，查看课程与专栏。",
+    href: "/courses",
+    ctaLabel: "去找课程",
+    icon: "课",
+    featured: true,
+    enabled: true,
+  },
+  {
+    key: "materials",
+    title: "找资料",
+    summary: "查找电子资料与学习资源。",
+    href: "/materials",
+    ctaLabel: "去找资料",
+    icon: "料",
+    featured: false,
+    enabled: true,
+  },
+  {
+    key: "shop",
+    title: "逛商城",
+    summary: "选购商品、课程与电子资料。",
+    href: MALL_PUBLIC_HREF,
+    ctaLabel: "去逛商城",
+    icon: "城",
+    featured: false,
+    enabled: true,
+  },
+  {
+    key: "community",
+    title: "进社区",
+    summary: "交流经验、参与讨论。",
+    href: "/forum",
+    ctaLabel: "进入社区",
+    icon: "社",
+    featured: false,
+    enabled: true,
+  },
+];
+
+/**
+ * 重点标记只决定推荐顺序，不决定卡片颜色、字号或按钮。
+ * 没有任何卡片显式 featured 时保持原顺序，避免把第一张卡误当成精选深色卡。
+ * 多张重点时只把数组里遇到的第一张提前，其余相对顺序不动，避免打乱站长已保存的排列。
+ */
+export function orderHomeBusinesses<T extends { key: string; featured?: boolean }>(items: T[]): T[] {
+  const primary = items.find((item) => item.featured === true);
+  if (!primary) return items.slice();
+  return [primary, ...items.filter((item) => item.key !== primary.key)];
+}
+
 export const DEFAULT_ACADEMIC_FOCUS: HomeAcademicFocus = {
   enabled: true,
   eyebrow: "当前重点业务",
@@ -415,11 +483,11 @@ export const DEFAULT_FOOTER_CTA: HomeFooterCta = {
 export const DEFAULT_SECTION_CHROME: Partial<Record<HomeSectionId, HomeSectionChrome>> = {
   trust: { spacing: "compact", background: "soft", columns: 4 },
   businesses: {
-    title: "我们做什么",
-    subtitle: "先看业务，再进入具体产品。",
+    title: "从这里开始",
+    subtitle: "找课程、找资料、逛商城，或进社区。",
     spacing: "relaxed",
     background: "plain",
-    columns: 2,
+    columns: 4,
     featured: true,
   },
   portal: {
@@ -454,7 +522,7 @@ export const DEFAULT_SECTION_CHROME: Partial<Record<HomeSectionId, HomeSectionCh
   },
   contact: { background: "soft", spacing: "relaxed" },
   banners: { spacing: "compact", background: "plain" },
-  footerCta: { background: "contrast", spacing: "relaxed" },
+  footerCta: { background: "plain", spacing: "relaxed" },
 };
 
 export const DEFAULT_PORTAL: PortalConfig = {
@@ -487,16 +555,23 @@ export const DEFAULT_PORTAL: PortalConfig = {
       homeRank: 1,
       icon: "学",
     },
-    // 顶栏只留「网课资料」；课程/资料广场在页内 Tab 同级切换，不与首页/商城抢位
     {
       key: "courses",
-      label: "网课资料",
+      label: "在线课程",
       href: "/courses",
-      summary: "课程、专栏与可下载的学习资料。",
+      summary: "按主题学习，查看课程与专栏。",
       category: "教育",
       status: "live",
       featuredOnHome: true,
       homeRank: 2,
+    },
+    {
+      key: "materials",
+      label: "资料中心",
+      href: "/materials",
+      summary: "查找电子资料与学习资源。",
+      category: "教育",
+      status: "live",
     },
     // 约搭：线下结伴 / 活动匹配广场（类似「一起玩」，非小程序复刻）
     {
@@ -510,9 +585,9 @@ export const DEFAULT_PORTAL: PortalConfig = {
     {
       key: "shop",
       label: "商城",
-      href: "/shop",
-      summary: "站内可购买的商品与服务。",
-      category: "软件",
+      href: MALL_PUBLIC_HREF,
+      summary: "选购商品、课程与电子资料。",
+      category: "商城",
       status: "live",
     },
     // 自研软件产品专栏（颗秒会议、颗秒网盘等）；库里无此项时 mergePortalNav 会补到末尾
@@ -657,8 +732,10 @@ function normalizeNavItem(
     key,
     label:
       String(item?.label || fallback.label).trim().slice(0, 40) || fallback.label,
-    href:
-      String(item?.href || fallback.href).trim().slice(0, 300) || fallback.href,
+    href: (key === "shop"
+      ? publicMallHref(String(item?.href || fallback.href).trim())
+      : String(item?.href || fallback.href).trim()
+    ).slice(0, 300) || fallback.href,
     enabled: item?.enabled !== false,
     // 商城已上线：旧 CMS 若仍标 comingSoon，运行时清掉，避免顶栏仍进占位页
     comingSoon: key === "shop" || key === "forum" ? false : Boolean(item?.comingSoon),
@@ -686,21 +763,9 @@ function normalizeNavItem(
 }
 
 /**
- * 资料广场不得作为顶栏与「网课资料」同级的项。
- * 生产 CMS 若仍存有旧的 materials 导航，运行时剥离，无需立刻改库。
- */
-function isMaterialsTopNavItem(item: PortalNavLink): boolean {
-  return (
-    item.key === "materials" ||
-    item.href === "/materials" ||
-    item.label === "资料广场"
-  );
-}
-
-/**
  * 合并门户导航：优先保留 CMS 已保存的数组顺序（拖拽排序依赖此行为）。
- * 缺省默认项追加到末尾；旧库「知识付费」等自定义 label 会保留。
- * 旧的顶栏「资料广场」会被剥掉（入口改由页内 Tab 承担）。
+ * 缺省默认项追加到末尾；旧库自定义 label 会保留。
+ * 资料中心是独立入口。已经保存且关闭的项留在列表里，避免被当成缺失项重新打开。
  */
 function mergePortalNav(
   saved: Array<Partial<PortalNavLink> | undefined> | undefined,
@@ -713,8 +778,14 @@ function mergePortalNav(
     .map((item, index) =>
       normalizeNavItem(item, DEFAULT_PORTAL.nav[index] || DEFAULT_PORTAL.nav[0]),
     )
-    .filter((item) => item.label && item.href)
-    .filter((item) => !isMaterialsTopNavItem(item));
+    .filter((item) => item.label && item.href);
+
+  const savedPublicItems = normalizedSaved.filter(
+    (item) => item.key !== "account-center" && item.key !== "kkchat",
+  );
+  const allPublicItemsDisabled =
+    savedPublicItems.length > 0 && savedPublicItems.every((item) => item.enabled === false);
+  const savedKeys = new Set(normalizedSaved.map((item) => item.key));
 
   const seenKeys = new Set<string>();
   const merged: PortalNavLink[] = [];
@@ -730,7 +801,6 @@ function mergePortalNav(
   // 教务不走这条末尾追加：缺省位置由 ensureAcademicNav 决定，已保存的则原位保留。
   for (const defaultItem of DEFAULT_PORTAL.nav) {
     if (seenKeys.has(defaultItem.key)) continue;
-    if (isMaterialsTopNavItem(defaultItem)) continue;
     if (defaultItem.key === "academic" || defaultItem.key === "kkchat") continue;
     merged.push({ ...defaultItem });
     seenKeys.add(defaultItem.key);
@@ -744,11 +814,20 @@ function mergePortalNav(
       item.href.startsWith("https://account.yydsxwh.com"),
   );
   // 满 20 项时默认项会被裁掉；账号中心必须留下，宁可少显示一个普通入口
-  return ensureKkchatNav(
+  const result = ensureKkchatNav(
     ensureAcademicNav(
       ensureAccountCenterNav(hasAccountCenter ? trimmed : merged.slice(0, 21)),
     ),
   );
+  // 老版本全关时可能还没有资料中心等新增项。补齐配置但保持关闭，
+  // 独立账号入口仍遵循原有账号中心规则。
+  return allPublicItemsDisabled
+    ? result.map((item) =>
+        !savedKeys.has(item.key) && item.key !== "account-center"
+          ? { ...item, enabled: false }
+          : item,
+      )
+    : result;
 }
 
 function isPersonNav(item: PortalNavLink) {
@@ -762,7 +841,12 @@ function isPersonNav(item: PortalNavLink) {
 }
 
 function isCoursesNav(item: PortalNavLink) {
-  return item.key === "courses" || item.href === "/courses" || item.label === "网课资料";
+  return (
+    item.key === "courses" ||
+    item.href === "/courses" ||
+    item.label === "在线课程" ||
+    item.label === "网课资料"
+  );
 }
 
 /**
@@ -1151,6 +1235,7 @@ function normalizeSectionChromeMap(
   return next;
 }
 
+
 export function resolveSectionChrome(
   chrome: Partial<Record<HomeSectionId, HomeSectionChrome>> | undefined,
   id: HomeSectionId,
@@ -1176,7 +1261,39 @@ function normalizeTrustItems(raw: unknown): HomeTrustItem[] {
   return items.length ? items : structuredClone(DEFAULT_TRUST_ITEMS);
 }
 
+function businessText(value: string | undefined) {
+  return String(value || "").trim();
+}
+
+/** 只有内容、顺序、图标和打开方式都未改过，且全部开启的旧默认卡片才迁移。 */
+function isUntouchedLegacyBusinessSet(raw: unknown): boolean {
+  if (!Array.isArray(raw) || raw.length !== LEGACY_DEFAULT_BUSINESSES.length) {
+    return false;
+  }
+  const byKey = new Map(LEGACY_DEFAULT_BUSINESSES.map((item) => [item.key, item]));
+  const seen = new Set<string>();
+  for (const [index, item] of raw.entries()) {
+    if (!item || typeof item !== "object") return false;
+    const row = item as Partial<HomeBusiness>;
+    const prev = row.key ? byKey.get(row.key) : undefined;
+    if (!prev || row.enabled === false) return false;
+    if (row.key !== LEGACY_DEFAULT_BUSINESSES[index]?.key) return false;
+    if (businessText(row.title) !== prev.title) return false;
+    if (businessText(row.href) !== prev.href) return false;
+    if (businessText(row.summary) !== prev.summary) return false;
+    if (businessText(row.ctaLabel) !== prev.ctaLabel) return false;
+    if (businessText(row.secondaryHref) !== businessText(prev.secondaryHref)) return false;
+    if (businessText(row.secondaryLabel) !== businessText(prev.secondaryLabel)) return false;
+    if (row.icon !== undefined && businessText(row.icon) !== businessText(prev.icon)) return false;
+    if (row.featured !== undefined && row.featured !== prev.featured) return false;
+    if (Boolean(row.openInNewTab) !== Boolean(prev.openInNewTab)) return false;
+    seen.add(prev.key);
+  }
+  return seen.size === LEGACY_DEFAULT_BUSINESSES.length;
+}
+
 function normalizeBusinesses(raw: unknown): HomeBusiness[] {
+  if (isUntouchedLegacyBusinessSet(raw)) return structuredClone(DEFAULT_BUSINESSES);
   const source = Array.isArray(raw) ? raw : DEFAULT_BUSINESSES;
   const items: HomeBusiness[] = [];
   for (const [index, item] of source.entries()) {
@@ -1184,7 +1301,13 @@ function normalizeBusinesses(raw: unknown): HomeBusiness[] {
     const row = item && typeof item === "object" ? (item as Partial<HomeBusiness>) : {};
     const fallback = DEFAULT_BUSINESSES[index] || DEFAULT_BUSINESSES[0];
     const title = String(row.title || fallback?.title || "").trim().slice(0, 40);
-    const href = String(row.href || fallback?.href || "").trim().slice(0, 300);
+    const href = (
+      String(row.key || fallback?.key || "") === "shop"
+        ? publicMallHref(String(row.href || fallback?.href || ""))
+        : String(row.href || fallback?.href || "")
+    )
+      .trim()
+      .slice(0, 300);
     if (!title || !href) continue;
     items.push({
       key: String(row.key || fallback?.key || `biz-${index + 1}`).trim().slice(0, 40),
@@ -1402,3 +1525,5 @@ export function splitPortalBody(body: string) {
     .map((p) => p.trim())
     .filter(Boolean);
 }
+
+

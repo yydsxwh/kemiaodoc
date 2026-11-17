@@ -8,18 +8,23 @@ import { jwtVerify } from "jose";
 import { cookies, headers } from "next/headers";
 import { prisma } from "./db";
 import { primaryRole, normalizeRoles, type Role } from "./roles";
+import { clearSessionCookie } from "./auth-session-cookie";
 import {
   DEVICE_COOKIE,
   TAB_HEADER,
+  accountCards,
+  legacyFallback,
   holdCookieName,
   isTabContextId,
   multiAccountTabsEnabled,
   planAddAccount,
   planLogout,
+  planResume,
   planRoleSwitch,
   resolveAccess,
   type AccountRecord,
   type BrokerState,
+  type TabMutation,
 } from "./tab-decision";
 
 export { TAB_HEADER, multiAccountTabsEnabled };
@@ -177,7 +182,10 @@ export async function readWwwTabHit(): Promise<WwwTabHit> {
   const tab = (await headers()).get(TAB_HEADER);
   const state = await loadState(device.id);
   const decision = resolveAccess(state, { tabHeader: tab });
-  if (decision.kind !== "ready") return { kind: decision.kind === "ambiguous" ? "ambiguous" : "anonymous" };
+  if (decision.kind !== "ready") {
+    if (legacyFallback(state, decision)) return { kind: "legacy" };
+    return { kind: decision.kind === "ambiguous" ? "ambiguous" : "anonymous" };
+  }
   const jar = await cookies();
   const token = jar.get(holdCookieName(decision.account.sessionId))?.value;
   if (!token) return { kind: "anonymous" };
@@ -206,31 +214,156 @@ export async function readWwwTabHit(): Promise<WwwTabHit> {
   };
 }
 
-export async function updateWwwTab(input: { op: "logout-tab" | "role"; role?: string }) {
+export type WwwAccountCard = {
+  sessionId: string;
+  name: string;
+  activeRole: string | null;
+};
+
+export async function listWwwAccounts(): Promise<WwwAccountCard[]> {
+  if (!multiAccountTabsEnabled()) return [];
   const device = await currentDevice();
-  const tab = (await headers()).get(TAB_HEADER);
-  if (!device?.id || !isTabContextId(tab)) return { ok: false };
+  if (!device?.id) return [];
   const state = await loadState(device.id);
+  return accountCards(state)
+    .filter((card) => card.status === "active")
+    .map((card) => ({
+      sessionId: card.sessionId,
+      name: card.name,
+      activeRole: card.activeRole,
+    }));
+}
+
+async function writeTab(deviceId: string, contextId: string, holdId: string, activeRole: string) {
+  const existing = await prisma.wwwTabContext.findUnique({
+    where: { id: contextId },
+    select: { deviceId: true },
+  });
+  if (existing && existing.deviceId !== deviceId) return;
+  if (!existing) {
+    await prisma.wwwTabContext.create({
+      data: { id: contextId, deviceId, holdId, activeRole },
+    });
+    return;
+  }
+  await prisma.wwwTabContext.update({
+    where: { id: contextId },
+    data: { holdId, activeRole, revokedAt: null },
+  });
+}
+
+/** 只改这一台浏览器的主站账本。不增加 sessionEpoch，其他设备的登录保持有效。 */
+async function applyWwwMutations(deviceId: string, mutations: TabMutation[]) {
+  const jar = await cookies();
+  for (const mutation of mutations) {
+    if (mutation.op === "bind") {
+      const owned = await prisma.wwwDeviceAccount.findFirst({
+        where: { deviceId, holdId: mutation.sessionId, revokedAt: null },
+        select: { id: true },
+      });
+      if (!owned) continue;
+      await writeTab(deviceId, mutation.contextId, mutation.sessionId, mutation.activeRole);
+    } else if (mutation.op === "clear-tab") {
+      // 保留这一行，holdId 为空表示这个标签页已退出。
+      // 标成撤销后，下一次请求会把它当成没见过的标签页，又自动登回唯一账号。
+      await writeTab(deviceId, mutation.contextId, "", "");
+    } else if (mutation.op === "revoke-session") {
+      await prisma.wwwDeviceAccount.updateMany({
+        where: { deviceId, holdId: mutation.sessionId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await prisma.wwwTabContext.updateMany({
+        where: { deviceId, holdId: mutation.sessionId, revokedAt: null },
+        data: { holdId: "", activeRole: "" },
+      });
+      jar.set(holdCookieName(mutation.sessionId), "", hostCookie(0));
+    } else if (mutation.op === "mark-explicit") {
+      await prisma.wwwBrowserDevice.update({ where: { id: deviceId }, data: { explicitPick: true } });
+    } else if (mutation.op === "clear-explicit") {
+      await prisma.wwwBrowserDevice.update({ where: { id: deviceId }, data: { explicitPick: false } });
+    } else if (mutation.op === "revoke-device") {
+      const holds = await prisma.wwwDeviceAccount.findMany({
+        where: { deviceId },
+        select: { holdId: true },
+      });
+      await prisma.wwwDeviceAccount.updateMany({
+        where: { deviceId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await prisma.wwwBrowserDevice.update({
+        where: { id: deviceId },
+        data: { revokedAt: new Date() },
+      });
+      for (const hold of holds) jar.set(holdCookieName(hold.holdId), "", hostCookie(0));
+      clearSessionCookie(jar);
+    }
+  }
+}
+
+export type WwwTabResult = {
+  ok: boolean;
+  applied: boolean;
+  status: "ready" | "select" | "anonymous";
+  /** no-device：还在旧的单 Cookie 上，调用方只清这一台浏览器，不能抬高全局会话版本。 */
+  reason?: "disabled" | "no-device" | "no-tab" | "unchanged";
+};
+
+function statusOf(kind: string): WwwTabResult["status"] {
+  if (kind === "ready") return "ready";
+  if (kind === "ambiguous") return "select";
+  return "anonymous";
+}
+
+export async function updateWwwTab(input: {
+  op: "resume" | "select" | "role" | "logout-tab" | "remove-account" | "logout-browser";
+  role?: string;
+  sessionId?: string;
+  cloneFrom?: string;
+  tabHeader?: string | null;
+}): Promise<WwwTabResult> {
+  if (!multiAccountTabsEnabled()) return { ok: false, applied: false, status: "anonymous", reason: "disabled" };
+  const device = await currentDevice();
+  const tab = input.tabHeader !== undefined ? input.tabHeader : (await headers()).get(TAB_HEADER);
+  if (!device?.id) return { ok: false, applied: false, status: "anonymous", reason: "no-device" };
+  if (!isTabContextId(tab)) return { ok: false, applied: false, status: "anonymous", reason: "no-tab" };
+  const state = await loadState(device.id);
+
   if (input.op === "role") {
     const plan = planRoleSwitch(state, { contextId: tab, role: input.role || "" });
-    for (const mutation of plan.mutations) {
-      if (mutation.op === "bind") {
-        await prisma.wwwTabContext.updateMany({
-          where: { id: tab, deviceId: device.id },
-          data: { activeRole: mutation.activeRole },
-        });
-      }
+    if (plan.mutations.length === 0) {
+      return { ok: false, applied: false, status: statusOf(plan.decision.kind), reason: "unchanged" };
     }
-    return { ok: true };
+    await applyWwwMutations(device.id, plan.mutations);
+    return { ok: true, applied: true, status: "ready" };
   }
-  const plan = planLogout(state, { scope: "tab", contextId: tab });
-  for (const mutation of plan.mutations) {
-    if (mutation.op === "clear-tab") {
-      await prisma.wwwTabContext.updateMany({
-        where: { id: mutation.contextId, deviceId: device.id },
-        data: { revokedAt: new Date(), holdId: "" },
-      });
+
+  if (input.op === "logout-tab" || input.op === "remove-account" || input.op === "logout-browser") {
+    const scope = input.op === "logout-tab" ? "tab" : input.op === "remove-account" ? "account" : "browser";
+    const plan = planLogout(state, { scope, contextId: tab });
+    if (plan.mutations.length === 0) {
+      return {
+        ok: false,
+        applied: false,
+        status: statusOf(resolveAccess(state, { tabHeader: tab }).kind),
+        reason: "unchanged",
+      };
     }
+    await applyWwwMutations(device.id, plan.mutations);
+    if (scope === "browser") return { ok: true, applied: true, status: "anonymous" };
+    const next = await loadState(device.id);
+    return { ok: true, applied: true, status: statusOf(resolveAccess(next, { tabHeader: tab }).kind) };
   }
-  return { ok: true };
+
+  const plan = planResume(state, {
+    contextId: tab,
+    cloneFrom: input.cloneFrom,
+    selectSessionId: input.op === "select" ? input.sessionId : null,
+  });
+  if (input.op === "select" && !plan.mutations.some((item) => item.op === "bind")) {
+    return { ok: false, applied: false, status: "select", reason: "unchanged" };
+  }
+  await applyWwwMutations(device.id, plan.mutations);
+  const next = await loadState(device.id);
+  const decision = resolveAccess(next, { tabHeader: tab });
+  return { ok: decision.kind === "ready" || decision.kind === "anonymous", applied: true, status: statusOf(decision.kind) };
 }

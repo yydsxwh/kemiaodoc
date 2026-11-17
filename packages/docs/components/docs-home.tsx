@@ -3,31 +3,21 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { DocsDocumentPayload } from "@andyyyds/docs/lib/docs-content";
+import { DocsLibraryNav } from "@andyyyds/docs/components/docs-library-nav";
 import { createDocsDocumentRequest } from "@andyyyds/docs/lib/docs-client";
+import type { DocsLibrarySnapshot } from "@andyyyds/docs/lib/docs-library";
 
 type Props = {
   loggedIn: boolean;
-  documents: DocsDocumentPayload[];
+  library: DocsLibrarySnapshot | null;
 };
 
-function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("zh-CN", {
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
-}
-
-export function DocsHome({ loggedIn, documents }: Props) {
+export function DocsHome({ loggedIn, library }: Props) {
   const router = useRouter();
+  const [snapshot, setSnapshot] = useState(library);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [tag, setTag] = useState("");
 
   const createCloud = async () => {
     setBusy(true);
@@ -45,12 +35,7 @@ export function DocsHome({ loggedIn, documents }: Props) {
     <div className="grid gap-4">
       <div className="flex flex-wrap gap-2">
         {loggedIn ? (
-          <button
-            type="button"
-            className="btn btn-primary min-h-11 px-4"
-            disabled={busy}
-            onClick={() => void createCloud()}
-          >
+          <button type="button" className="btn btn-primary min-h-11 px-4" disabled={busy} onClick={() => void createCloud()}>
             {busy ? "创建中…" : "新建云端文档"}
           </button>
         ) : (
@@ -63,32 +48,20 @@ export function DocsHome({ loggedIn, documents }: Props) {
         </Link>
       </div>
       {error ? <p className="text-sm text-[var(--fire)]">{error}</p> : null}
-
-      {loggedIn ? (
-        documents.length ? (
-          <ul className="grid gap-3">
-            {documents.map((doc) => (
-              <li key={doc.id}>
-                <Link
-                  href={`/products/docs/${doc.id}`}
-                  className="surface block rounded-[24px] p-4 transition hover:-translate-y-0.5 sm:p-5"
-                >
-                  <h2 className="text-lg font-semibold text-[var(--ink)]">{doc.title}</h2>
-                  <p className="mt-1 text-xs text-[var(--muted)]">
-                    更新于 {formatTime(doc.updatedAt)}
-                  </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-[var(--muted)]">还没有云端文档。点上面新建一篇。</p>
-        )
-      ) : (
-        <p className="text-sm leading-6 text-[var(--muted)]">
-          未登录也可以先在浏览器里写；换设备或清缓存会丢。登录后可保存多篇到云端。
-        </p>
-      )}
+      <p className="text-xs leading-5 text-[var(--muted)]">
+        每人最多 80 篇，每篇最多 80 万字符。旧文档仍在「未分类」，放进知识库不会复制正文。
+      </p>
+      <div className="surface overflow-hidden rounded-[28px]">
+        <DocsLibraryNav
+          library={snapshot}
+          loggedIn={loggedIn}
+          currentId=""
+          activeTag={tag}
+          onLibrary={setSnapshot}
+          onTag={setTag}
+          onError={setError}
+        />
+      </div>
     </div>
   );
 }

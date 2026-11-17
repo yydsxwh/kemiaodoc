@@ -3,11 +3,15 @@ import {
   clampDocsTitle,
   DOCS_MAX_PER_USER,
   emptyDocsContent,
+  extractPlainText,
   parseStoredDocument,
+  sanitizeDocsContent,
   serializeDocsContent,
   type DocsDocumentPayload,
   type DocsJsonNode,
 } from "@andyyyds/docs/lib/docs-content";
+import { assignHeadingAnchors } from "@andyyyds/docs/lib/docs-outline";
+import { clampPlainText } from "@andyyyds/docs/lib/docs-search";
 import {
   DEFAULT_DOCS_PAGE_CHROME,
   normalizePageChrome,
@@ -31,6 +35,47 @@ export class DocsNotFoundError extends Error {
     super("文档不存在或已删除");
     this.name = "DocsNotFoundError";
   }
+}
+
+export class DocsConflictError extends Error {
+  current: DocsDocumentPayload;
+  constructor(current: DocsDocumentPayload) {
+    super("这篇文档在其他页面已更新。当前编辑还在，没有被覆盖。");
+    this.name = "DocsConflictError";
+    this.current = current;
+  }
+}
+
+function contentForStore(content: DocsJsonNode, docId: string): { json: string; plainText: string } {
+  const anchored = assignHeadingAnchors(sanitizeDocsContent(content), docId).content;
+  return {
+    json: serializeDocsContent(anchored),
+    plainText: clampPlainText(extractPlainText(anchored)),
+  };
+}
+
+export type DocsDocumentSummary = {
+  id: string;
+  title: string;
+  updatedAt: string;
+  createdAt: string;
+  preview: string;
+};
+
+export async function listDocsSummaries(userId: string): Promise<DocsDocumentSummary[]> {
+  const rows = await prisma.docsDocument.findMany({
+    where: { userId },
+    orderBy: { updatedAt: "desc" },
+    take: DOCS_MAX_PER_USER,
+    select: { id: true, title: true, updatedAt: true, createdAt: true, plainText: true },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    title: clampDocsTitle(row.title),
+    updatedAt: row.updatedAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    preview: row.plainText.replace(/\s+/g, " ").trim().slice(0, 80),
+  }));
 }
 
 export async function listDocsDocuments(userId: string): Promise<DocsDocumentPayload[]> {
@@ -70,7 +115,8 @@ export async function createDocsDocument(
     data: {
       userId,
       title: clampDocsTitle(input?.title),
-      content: serializeDocsContent(content),
+      content: serializeDocsContent(sanitizeDocsContent(content)),
+      plainText: clampPlainText(extractPlainText(sanitizeDocsContent(content))),
       listScheme: JSON.stringify(
         normalizeListScheme(input?.listScheme || DEFAULT_DOCS_LIST_SCHEME),
       ),
@@ -79,7 +125,15 @@ export async function createDocsDocument(
       ),
     },
   });
-  return parseStoredDocument(row);
+  const stored = contentForStore(content, row.id);
+  if (stored.json === row.content && stored.plainText === row.plainText) {
+    return parseStoredDocument(row);
+  }
+  const updated = await prisma.docsDocument.update({
+    where: { id: row.id },
+    data: { content: stored.json, plainText: stored.plainText },
+  });
+  return parseStoredDocument(updated);
 }
 
 export async function updateDocsDocument(
@@ -90,22 +144,35 @@ export async function updateDocsDocument(
     content?: DocsJsonNode;
     listScheme?: DocsListScheme;
     pageChrome?: DocsPageChrome;
+    baseUpdatedAt?: string | null;
+    force?: boolean;
   },
 ): Promise<DocsDocumentPayload> {
   const existing = await prisma.docsDocument.findFirst({
     where: { id, userId },
-    select: { id: true },
   });
   if (!existing) throw new DocsNotFoundError();
+  if (
+    !input.force &&
+    input.baseUpdatedAt &&
+    new Date(existing.updatedAt).getTime() !== new Date(input.baseUpdatedAt).getTime()
+  ) {
+    throw new DocsConflictError(parseStoredDocument(existing));
+  }
 
   const data: {
     title?: string;
     content?: string;
+    plainText?: string;
     listScheme?: string;
     pageChrome?: string;
   } = {};
   if (input.title !== undefined) data.title = clampDocsTitle(input.title);
-  if (input.content !== undefined) data.content = serializeDocsContent(input.content);
+  if (input.content !== undefined) {
+    const stored = contentForStore(input.content, id);
+    data.content = stored.json;
+    data.plainText = stored.plainText;
+  }
   if (input.listScheme !== undefined) {
     data.listScheme = JSON.stringify(normalizeListScheme(input.listScheme));
   }
@@ -117,12 +184,19 @@ export async function updateDocsDocument(
     where: { id },
     data,
   });
+  if (data.title) {
+    await prisma.docsNode.updateMany({
+      where: { userId, documentId: id, kind: "document" },
+      data: { name: data.title },
+    });
+  }
   return parseStoredDocument(row);
 }
 
 export async function deleteDocsDocument(userId: string, id: string): Promise<void> {
-  const result = await prisma.docsDocument.deleteMany({
-    where: { id, userId },
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.docsNode.deleteMany({ where: { userId, documentId: id } });
+    return tx.docsDocument.deleteMany({ where: { id, userId } });
   });
   if (result.count === 0) throw new DocsNotFoundError();
 }

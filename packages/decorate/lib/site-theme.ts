@@ -17,6 +17,7 @@ export {
   palettesInCategory,
 } from "./site-theme-palettes";
 
+import { readingColorVars } from "./reading-colors";
 import {
   EXTRA_THEME_BACKGROUNDS,
   EXTRA_THEME_PACKS,
@@ -30,6 +31,7 @@ import {
   QZONE_THEME_PACKS,
 } from "./site-theme-qzone";
 import { THEME_PALETTES } from "./site-theme-palettes";
+import { uniqueById } from "./theme-list";
 
 export type ThemeBackgroundKind = "gradient" | "photo" | "pattern";
 
@@ -94,8 +96,53 @@ export function packCategoryOf(pack: ThemePack): ThemePackCategory {
 export function packsInCategory(
   category: ThemePackCategory | "all",
 ): ThemePack[] {
-  if (category === "all") return THEME_PACKS;
-  return THEME_PACKS.filter((p) => packCategoryOf(p) === category);
+  const source =
+    category === "all"
+      ? THEME_PACKS
+      : THEME_PACKS.filter((p) => packCategoryOf(p) === category);
+  // 新数组。切分类是替换，不是接到上一屏后面。
+  return uniqueById(source);
+}
+
+export type DressupListEvent =
+  | { type: "category"; category: ThemePackCategory | "all" }
+  | { type: "click"; id: string };
+
+/**
+ * 装扮卡片列表只跟当前分类走。
+ * 点卡片只表示试穿，不能把这张卡再追加进列表。
+ */
+export function dressupPacksAfter(
+  category: ThemePackCategory | "all",
+  events: readonly DressupListEvent[],
+): ThemePack[] {
+  let current = category;
+  for (const event of events) {
+    if (event.type === "category") current = event.category;
+  }
+  return packsInCategory(current);
+}
+
+/** 试穿说明：主题包、配色、背景同名时只写一次。 */
+export function tryOnCaption(
+  parts: readonly (string | null | undefined)[],
+): string {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const part of parts) {
+    const name = part?.trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names.join(" · ");
+}
+
+export const DRESSUP_SAVED_TEXT = "装扮已保存成功，前台访客将看到新装扮";
+
+/** 换背景列表。同一背景 id 只出现一次，且不把主题库数组交出去。 */
+export function backgroundsForDressup(): ThemeBackground[] {
+  return uniqueById(THEME_BACKGROUNDS);
 }
 
 export type LayoutDensity = "default" | "compact" | "airy";
@@ -556,6 +603,16 @@ export const THEME_PACKS: ThemePack[] = [
       "radial-gradient(ellipse at 20% 0%, rgba(34,197,94,0.4), transparent 50%), linear-gradient(180deg,#07140c,#030a06)",
   },
   ...EXTRA_THEME_PACKS,
+  {
+    id: "pack-tahiti-jelly-sea",
+    name: "大溪地·果冻海",
+    tagline: "品牌按钮与选中态改为泻湖果冻玻璃，沿用当前背景",
+    paletteId: "tahiti-jelly-sea",
+    backgroundId: "qzone-bg-rainbow-sunny",
+    category: "island",
+    cover:
+      "linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0) 42%), linear-gradient(165deg, #e9fcff, #7fe7f2 48%, #38c6dc)",
+  },
   // QQ 空间装扮一键包（站长在「一键主题」里选）
   ...QZONE_THEME_PACKS,
   // 海岛/阳光一键包（约 20 套，装扮面板「海岛/阳光」分类）
@@ -667,6 +724,7 @@ export function buildThemeStyleVars(input: {
     "--accent-soft": t.fireSoft,
     "--card": t.card,
     "--shadow": t.shadow,
+    ...readingColorVars(t),
     "--site-bg-layers": background.layers,
     "--surface-radius": radius,
     "--surface-pad": surfacePad,

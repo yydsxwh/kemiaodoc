@@ -1139,8 +1139,19 @@ export function fontById(id: string | null | undefined): FontEntry {
 }
 
 export function fontsInCategory(category: FontCategory | "all"): FontEntry[] {
-  if (category === "all") return FONT_LIBRARY;
-  return FONT_LIBRARY.filter((f) => f.category === category);
+  const source =
+    category === "all"
+      ? FONT_LIBRARY
+      : FONT_LIBRARY.filter((f) => f.category === category);
+  // 字体库同样不把原数组交出去，避免筛选时越加越多。
+  const seen = new Set<string>();
+  const next: FontEntry[] = [];
+  for (const font of source) {
+    if (seen.has(font.id)) continue;
+    seen.add(font.id);
+    next.push(font);
+  }
+  return next;
 }
 
 /** 分类 + 关键词搜索（名称 / id / keywords） */

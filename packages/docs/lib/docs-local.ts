@@ -12,6 +12,7 @@ import {
   type DocsDocumentPayload,
   type DocsJsonNode,
 } from "@andyyyds/docs/lib/docs-content";
+import { assignHeadingAnchors } from "@andyyyds/docs/lib/docs-outline";
 import {
   DEFAULT_DOCS_PAGE_CHROME,
   normalizePageChrome,
@@ -44,7 +45,7 @@ export function loadLocalDocument(): DocsDocumentPayload {
     return {
       id: DOCS_LOCAL_ID,
       title: clampDocsTitle(parsed.title),
-      content: sanitizeDocsContent(parsed.content),
+      content: assignHeadingAnchors(sanitizeDocsContent(parsed.content), DOCS_LOCAL_ID).content,
       listScheme: normalizeListScheme(parsed.listScheme),
       pageChrome: normalizePageChrome(parsed.pageChrome),
       updatedAt: parsed.updatedAt || new Date().toISOString(),
@@ -65,7 +66,7 @@ export function saveLocalDocument(input: {
   const doc: DocsDocumentPayload = {
     id: DOCS_LOCAL_ID,
     title: clampDocsTitle(input.title),
-    content: sanitizeDocsContent(input.content),
+    content: assignHeadingAnchors(sanitizeDocsContent(input.content), DOCS_LOCAL_ID).content,
     listScheme: normalizeListScheme(input.listScheme),
     pageChrome: normalizePageChrome(input.pageChrome),
     updatedAt: now,

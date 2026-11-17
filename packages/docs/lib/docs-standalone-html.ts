@@ -1,5 +1,6 @@
 import { sanitizeDocsContent, type DocsJsonNode } from "@andyyyds/docs/lib/docs-content";
 import { docsContentToHtml } from "@andyyyds/docs/lib/docs-html";
+import { assignHeadingAnchors, extractOutline } from "@andyyyds/docs/lib/docs-outline";
 import {
   bandCell,
   normalizePageChrome,
@@ -19,10 +20,21 @@ export function wrapStandaloneHtml(input: {
   content: DocsJsonNode;
   listScheme: DocsListScheme;
   pageChrome: DocsPageChrome;
+  docId?: string;
 }): string {
   const chrome = normalizePageChrome(input.pageChrome);
   const schemeCss = buildListSchemeCss(normalizeListScheme(input.listScheme));
-  const body = docsContentToHtml(sanitizeDocsContent(input.content));
+  const content = assignHeadingAnchors(sanitizeDocsContent(input.content), input.docId || "export").content;
+  const body = docsContentToHtml(content);
+  const outline = extractOutline(content, input.docId || "export");
+  const toc = outline.length
+    ? `<nav class="docs-export-toc"><p>本篇目录</p><ol>${outline
+        .map(
+          (item) =>
+            `<li style="margin-left:${(item.level - 1) * 12}px"><a href="#${escapeHtml(item.anchorId)}">${escapeHtml(item.text || "空标题")}</a></li>`,
+        )
+        .join("")}</ol></nav>`
+    : "";
   const header = ["left", "center", "right"]
     .map((slot) => bandCell(chrome, "header", slot as "left", 1, 1))
     .join(" · ");
@@ -44,6 +56,7 @@ export function wrapStandaloneHtml(input: {
   .docs-band .r { text-align: right; }
   @page { size: A4; margin: 14mm 16mm 16mm; }
   @media print {
+    .docs-export-toc { display: none !important; }
     .docs-print-header { position: running(docs-header); }
     .docs-print-footer { position: running(docs-footer); }
     @page {
@@ -60,6 +73,7 @@ export function wrapStandaloneHtml(input: {
     <span class="c">${escapeHtml(bandCell(chrome, "header", "center", 1, 1))}</span>
     <span class="r">${escapeHtml(bandCell(chrome, "header", "right", 1, 1))}</span>
   </header>
+  ${toc}
   <article class="docs-prose">${body}</article>
   <footer class="docs-print-footer docs-band">
     <span>${escapeHtml(bandCell(chrome, "footer", "left", 1, 1))}</span>

@@ -7,12 +7,15 @@
  *
  * 改需求时注意：
  * - 「启用开关」在系统设置；「参数是否齐全」才算真正可用
- * - 两者都没有时会落到 mockOnly，结账页走模拟支付
+ * - 开发环境没接支付中心、两边都没配齐时，结账页可以走模拟支付
+ * - 生产环境，以及接上支付中心之后，关闭、无效、超时或未配置都不能再降级成模拟支付
  */
 
+import { readCenterAccount } from "./pay-center-account";
+import { decidePaymentChannels, type PaymentMode } from "./payment-account-lock";
 import { getSiteSettings } from "./site-settings";
 
-export type PaymentMode = "mock" | "wechat" | "alipay" | "both";
+export type { PaymentMode };
 
 export type PaymentChannels = {
   mode: PaymentMode;
@@ -20,6 +23,12 @@ export type PaymentChannels = {
   alipay: boolean;
   /** true 表示只能点「模拟支付」，用于未配真实收款时调试 */
   mockOnly: boolean;
+  /** 两个渠道都不可用，而且不是暂时读失败。这时不能改显示成模拟收款。 */
+  closed: boolean;
+  /** 支付中心超时或不可达，没有新鲜账户。 */
+  unavailable: boolean;
+  /** 指定账户无效，没有改用别的商户。 */
+  invalid: boolean;
 };
 
 /** 环境变量里是否凑齐微信商户必填项（可作为数据库配置的兜底） */
@@ -92,9 +101,20 @@ export async function getPublicSiteUrl() {
 
 /**
  * 结账页用的支付通道开关。
- * 判定顺序：强制 mock → 设置/env 指定单通道 → auto（看启用+配置是否齐全）。
+ * 没接支付中心时：强制 mock → 设置/env 指定单通道 → auto。
+ * 接上之后按该产品的微信、支付宝分别判断，不再因为其中一个无效就两个一起关掉，
+ * 也不再在读失败时改成模拟支付。
  */
-export async function getPaymentChannels(): Promise<PaymentChannels> {
+export async function getPaymentChannels(product = "main"): Promise<PaymentChannels> {
+  const origin = (process.env.PAY_CENTER_ORIGIN || "").replace(/\/+$/, "");
+  const token = process.env.PAY_CENTER_CONTROL_TOKEN || "";
+  const centerConfigured = Boolean(origin && token);
+  const [wechatAccount, alipayAccount] = centerConfigured
+    ? await Promise.all([
+        readCenterAccount(product, "WECHAT"),
+        readCenterAccount(product, "ALIPAY"),
+      ])
+    : [{ kind: "SKIP" as const }, { kind: "SKIP" as const }];
   const settings = await getSiteSettings();
   const wechatReady =
     Boolean(
@@ -111,38 +131,20 @@ export async function getPaymentChannels(): Promise<PaymentChannels> {
         settings.alipayPublicKey,
     ) || envAlipayReady();
 
-  const modeSetting = (settings.paymentMode || "auto").toLowerCase();
-  const envMode = (process.env.PAYMENT_MODE || "").toLowerCase();
-
-  if (modeSetting === "mock" || envMode === "mock") {
-    return { mode: "mock", wechat: false, alipay: false, mockOnly: true };
-  }
-
-  let wechat = settings.wechatEnabled && wechatReady;
-  let alipay = settings.alipayEnabled && alipayReady;
-
-  if (modeSetting === "wechat" || envMode === "wechat") {
-    wechat = wechatReady;
-    alipay = false;
-  } else if (modeSetting === "alipay" || envMode === "alipay") {
-    wechat = false;
-    alipay = alipayReady;
-  } else if (modeSetting === "both") {
-    wechat = wechatReady && settings.wechatEnabled;
-    alipay = alipayReady && settings.alipayEnabled;
-  }
-
-  // 真实通道一个都不可用时，降级为模拟，避免前台完全无法测流程
-  if (!wechat && !alipay) {
-    return { mode: "mock", wechat: false, alipay: false, mockOnly: true };
-  }
-  if (wechat && alipay) {
-    return { mode: "both", wechat: true, alipay: true, mockOnly: false };
-  }
-  if (wechat) {
-    return { mode: "wechat", wechat: true, alipay: false, mockOnly: false };
-  }
-  return { mode: "alipay", wechat: false, alipay: true, mockOnly: false };
+  return decidePaymentChannels({
+    centerConfigured,
+    allowMock: process.env.NODE_ENV !== "production",
+    wechat: wechatAccount.kind,
+    alipay: alipayAccount.kind,
+    local: {
+      modeSetting: (settings.paymentMode || "auto").toLowerCase(),
+      envMode: (process.env.PAYMENT_MODE || "").toLowerCase(),
+      wechatReady,
+      alipayReady,
+      wechatEnabled: settings.wechatEnabled,
+      alipayEnabled: settings.alipayEnabled,
+    },
+  });
 }
 
 /** @deprecated 请改用 getPaymentChannels；仅保留旧代码兼容 */

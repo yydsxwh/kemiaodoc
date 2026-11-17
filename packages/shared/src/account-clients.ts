@@ -84,6 +84,8 @@ export function accountAuthStartPath(input: {
   returnTo: string;
   client: AccountClientKey;
   ref?: string;
+  /** 再登一个账号时必须重新输入凭证，不能沿用账号中心里当前这个人。 */
+  prompt?: "login";
 }): string {
   const next = safeNextPath(input.returnTo);
   const params = new URLSearchParams();
@@ -92,6 +94,7 @@ export function accountAuthStartPath(input: {
   params.set("client", input.client);
   const ref = (input.ref || "").trim();
   if (ref) params.set("ref", ref.slice(0, 32));
+  if (input.prompt === "login") params.set("prompt", "login");
   return `/api/auth/account/start?${params.toString()}`;
 }
 

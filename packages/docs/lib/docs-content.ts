@@ -12,6 +12,7 @@ import {
   normalizeListScheme,
   type DocsListScheme,
 } from "@andyyyds/docs/lib/docs-scheme";
+import { assignHeadingAnchors, isHeadingAnchorId } from "@andyyyds/docs/lib/docs-outline";
 
 export const DOCS_TITLE_MAX_CHARS = 80;
 export const DOCS_CONTENT_MAX_CHARS = 800_000;
@@ -84,13 +85,31 @@ function sanitizeHeadingLevel(raw: unknown): number {
   return Math.min(6, Math.max(1, Math.round(n)));
 }
 
+function sanitizeImageDimension(raw: unknown): number | undefined {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  return Math.min(8000, Math.round(value));
+}
+
 function sanitizeImageAttrs(raw: unknown): Record<string, unknown> | undefined {
   if (!isPlainObject(raw)) return undefined;
   const src = String(raw.src || "").trim();
-  if (!src) return undefined;
+  if (!src || src.startsWith("blob:") || src.startsWith("file:")) return undefined;
   if (!/^(https?:\/\/|data:image\/|\/uploads\/|\/)/i.test(src)) return undefined;
   const alt = String(raw.alt || "").slice(0, 120);
-  return { src, alt };
+  const attrs: Record<string, unknown> = { src, alt };
+  const width = sanitizeImageDimension(raw.width);
+  const height = sanitizeImageDimension(raw.height);
+  if (width) attrs.width = width;
+  if (height) attrs.height = height;
+  return attrs;
+}
+
+function sanitizeHeadingAttrs(raw: unknown): Record<string, unknown> {
+  const source = isPlainObject(raw) ? raw : {};
+  const attrs: Record<string, unknown> = { level: sanitizeHeadingLevel(source.level) };
+  if (isHeadingAnchorId(source.anchorId)) attrs.anchorId = source.anchorId;
+  return attrs;
 }
 
 function sanitizeTableAttrs(raw: unknown): Record<string, unknown> | undefined {
@@ -132,7 +151,7 @@ export function sanitizeDocsContent(raw: unknown): DocsJsonNode {
     if (type === "heading") {
       return {
         type: "heading",
-        attrs: { level: sanitizeHeadingLevel(isPlainObject(node.attrs) ? node.attrs.level : 2) },
+        attrs: sanitizeHeadingAttrs(node.attrs),
         content: children.length ? children : [{ type: "text", text: "" }],
       };
     }
@@ -245,7 +264,7 @@ export function parseStoredDocument(raw: {
   return {
     id: raw.id,
     title: clampDocsTitle(raw.title),
-    content: sanitizeDocsContent(parsed),
+    content: assignHeadingAnchors(sanitizeDocsContent(parsed), raw.id).content,
     listScheme: normalizeListScheme(scheme),
     pageChrome: normalizePageChrome(chrome),
     updatedAt: new Date(raw.updatedAt).toISOString(),

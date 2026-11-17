@@ -42,10 +42,16 @@ function renderBlocks(nodes?: DocsJsonNode[]): string {
   return nodes.map(renderBlock).join("");
 }
 
+function headingAnchorAttr(node: DocsJsonNode): string {
+  const anchorId = String(node.attrs?.anchorId || "");
+  if (!/^h_[a-z0-9]{8,32}$/.test(anchorId)) return "";
+  return ` id="${escapeHtml(anchorId)}" data-anchor-id="${escapeHtml(anchorId)}"`;
+}
+
 function renderBlock(node: DocsJsonNode): string {
   if (node.type === "heading") {
     const level = Math.min(6, Math.max(1, Number(node.attrs?.level) || 2));
-    return `<h${level}>${renderInline(node.content) || "&nbsp;"}</h${level}>`;
+    return `<h${level}${headingAnchorAttr(node)}>${renderInline(node.content) || "&nbsp;"}</h${level}>`;
   }
   if (node.type === "paragraph") {
     return `<p>${renderInline(node.content) || "&nbsp;"}</p>`;
@@ -64,7 +70,13 @@ function renderBlock(node: DocsJsonNode): string {
     const src = escapeHtml(String(node.attrs?.src || ""));
     const alt = escapeHtml(String(node.attrs?.alt || ""));
     if (!src) return "";
-    return `<p><img src="${src}" alt="${alt}"></p>`;
+    const width = Number(node.attrs?.width);
+    const height = Number(node.attrs?.height);
+    const size =
+      Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0
+        ? ` width="${Math.round(width)}" height="${Math.round(height)}"`
+        : "";
+    return `<p><img src="${src}" alt="${alt}"${size}></p>`;
   }
   if (node.type === "table") {
     const rows = (node.content || [])
@@ -165,35 +177,254 @@ function markdownToNodes(text: string): DocsJsonNode[] {
   return out.length ? out : [{ type: "paragraph" }];
 }
 
-function stripScripts(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
-    .replace(/\son\w+="[^"]*"/gi, "")
-    .replace(/\son\w+='[^']*'/gi, "");
+type HtmlEl = {
+  type: "el";
+  tag: string;
+  attrs: Record<string, string>;
+  children: HtmlChild[];
+};
+type HtmlChild = HtmlEl | { type: "text"; text: string };
+
+const HTML_SKIP_TAGS = new Set(["script", "style", "noscript", "template"]);
+const HTML_VOID_TAGS = new Set(["br", "img", "hr", "meta", "link", "source"]);
+
+function decodeHtml(text: string): string {
+  return text
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, value) => {
+      const code = Number(value);
+      return code > 0 && code < 0x110000 ? String.fromCodePoint(code) : "";
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_, value) => {
+      const code = Number.parseInt(value, 16);
+      return code > 0 && code < 0x110000 ? String.fromCodePoint(code) : "";
+    });
 }
 
-function htmlToNodes(html: string): DocsJsonNode[] {
-  const clean = stripScripts(html);
-  const body = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(clean)?.[1] || clean;
-  const text = body
-    .replace(/<\/(p|div|h[1-6]|li|tr|table|ul|ol)>/gi, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "- ")
-    .replace(/<h([1-6])[^>]*>/gi, (_, level) => `${"#".repeat(Number(level))} `)
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"');
-  return markdownToNodes(text);
+function parseHtmlAttrs(raw: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const pattern = /([:@\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  let match = pattern.exec(raw);
+  while (match) {
+    const name = match[1].toLowerCase();
+    if (name.startsWith("on") || name === "style" || name === "srcset") {
+      match = pattern.exec(raw);
+      continue;
+    }
+    attrs[name] = decodeHtml(match[2] ?? match[3] ?? match[4] ?? "");
+    match = pattern.exec(raw);
+  }
+  return attrs;
+}
+
+function parseHtmlTree(html: string, warnings: string[]): HtmlEl {
+  const root: HtmlEl = { type: "el", tag: "body", attrs: {}, children: [] };
+  const stack: HtmlEl[] = [root];
+  const skipped = new Set<string>();
+  const pattern = /<!--[\s\S]*?-->|<\/([a-zA-Z0-9]+)\s*>|<([a-zA-Z0-9]+)([^>]*)\/?>|([^<]+)/g;
+  let match = pattern.exec(html);
+  while (match) {
+    if (match[1]) {
+      const tag = match[1].toLowerCase();
+      for (let index = stack.length - 1; index > 0; index -= 1) {
+        if (stack[index].tag === tag) {
+          stack.splice(index);
+          break;
+        }
+      }
+    } else if (match[2]) {
+      const tag = match[2].toLowerCase();
+      const selfClosing = HTML_VOID_TAGS.has(tag) || /\/\s*>$/.test(match[0]);
+      const el: HtmlEl = { type: "el", tag, attrs: parseHtmlAttrs(match[3] || ""), children: [] };
+      if (!HTML_SKIP_TAGS.has(stack[stack.length - 1]?.tag || "")) {
+        stack[stack.length - 1].children.push(el);
+      }
+      if (!selfClosing && !HTML_VOID_TAGS.has(tag)) stack.push(el);
+      if (["iframe", "object", "embed", "video", "svg", "canvas"].includes(tag)) skipped.add(tag);
+    } else if (match[4] && !HTML_SKIP_TAGS.has(stack[stack.length - 1]?.tag || "")) {
+      const text = decodeHtml(match[4]);
+      if (text.trim()) stack[stack.length - 1].children.push({ type: "text", text });
+    }
+    match = pattern.exec(html);
+  }
+  if (skipped.size) {
+    warnings.push(`有 ${skipped.size} 类内容无法导入（${[...skipped].join("、")}），已跳过。`);
+  }
+  return root;
+}
+
+function inlineFromChildren(children: HtmlChild[]): DocsJsonNode[] {
+  const nodes: DocsJsonNode[] = [];
+  const appendText = (text: string, marks?: DocsJsonNode["marks"]) => {
+    if (!text) return;
+    nodes.push(marks?.length ? { type: "text", text, marks } : { type: "text", text });
+  };
+  const walk = (child: HtmlChild, marks?: DocsJsonNode["marks"]) => {
+    if (child.type === "text") {
+      appendText(child.text, marks);
+      return;
+    }
+    if (child.tag === "br") {
+      nodes.push({ type: "hardBreak" });
+      return;
+    }
+    const nextMarks = marks ? [...marks] : [];
+    if (child.tag === "strong" || child.tag === "b") nextMarks.push({ type: "bold" });
+    if (child.tag === "em" || child.tag === "i") nextMarks.push({ type: "italic" });
+    child.children.forEach((item) => walk(item, nextMarks.length ? nextMarks : undefined));
+  };
+  children.forEach((child) => walk(child));
+  return nodes;
+}
+
+function imageNode(el: HtmlEl, warnings: string[]): DocsJsonNode | null {
+  const src = el.attrs.src || "";
+  if (!src) {
+    warnings.push("有一张图片没有地址，已跳过。");
+    return null;
+  }
+  if (!/^(https?:\/\/|data:image\/|\/)/i.test(src)) {
+    warnings.push("有一张图片地址无法使用，已跳过。");
+    return null;
+  }
+  const attrs: Record<string, unknown> = { src, alt: (el.attrs.alt || "").slice(0, 120) };
+  const width = Number(el.attrs.width);
+  const height = Number(el.attrs.height);
+  if (Number.isFinite(width) && width > 0) attrs.width = Math.round(width);
+  if (Number.isFinite(height) && height > 0) attrs.height = Math.round(height);
+  return { type: "image", attrs };
+}
+
+function headingNode(el: HtmlEl): DocsJsonNode {
+  const level = Number(el.tag.slice(1)) || 2;
+  const attrs: Record<string, unknown> = { level };
+  const anchor = el.attrs["data-anchor-id"] || (/^h_[a-z0-9]{8,32}$/.test(el.attrs.id || "") ? el.attrs.id : "");
+  if (anchor && /^h_[a-z0-9]{8,32}$/.test(anchor)) attrs.anchorId = anchor;
+  const content = inlineFromChildren(el.children);
+  return { type: "heading", attrs, content: content.length ? content : [{ type: "text", text: "" }] };
+}
+
+function blocksFromElement(el: HtmlEl, warnings: string[]): DocsJsonNode[] {
+  if (HTML_SKIP_TAGS.has(el.tag)) return [];
+  if (/^h[1-6]$/.test(el.tag)) return [headingNode(el)];
+  if (el.tag === "img") {
+    const image = imageNode(el, warnings);
+    return image ? [image] : [];
+  }
+  if (el.tag === "ul" || el.tag === "ol") {
+    const items = el.children
+      .filter((child): child is HtmlEl => child.type === "el" && child.tag === "li")
+      .map((item) => ({
+        type: "listItem",
+        content: blocksFromElement(
+          { type: "el", tag: "div", attrs: {}, children: item.children },
+          warnings,
+        ),
+      }));
+    return [
+      {
+        type: el.tag === "ol" ? "orderedList" : "bulletList",
+        content: items.length
+          ? items
+          : [{ type: "listItem", content: [{ type: "paragraph" }] }],
+      },
+    ];
+  }
+  if (el.tag === "table") {
+    const rows = el.children.flatMap((child) => {
+      if (child.type !== "el") return [];
+      if (child.tag === "tr") return [child];
+      return child.children.filter((row): row is HtmlEl => row.type === "el" && row.tag === "tr");
+    });
+    const content = rows.map((row) => ({
+      type: "tableRow",
+      content: row.children
+        .filter((cell): cell is HtmlEl => cell.type === "el" && (cell.tag === "td" || cell.tag === "th"))
+        .map((cell) => ({
+          type: cell.tag === "th" ? "tableHeader" : "tableCell",
+          content: blocksFromElement(
+            { type: "el", tag: "div", attrs: {}, children: cell.children },
+            warnings,
+          ),
+        })),
+    }));
+    return [{ type: "table", content }];
+  }
+  const blockTags = new Set([
+    "div",
+    "p",
+    "ul",
+    "ol",
+    "table",
+    "img",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "section",
+    "article",
+    "blockquote",
+  ]);
+  if (
+    el.tag === "p" ||
+    el.tag === "div" ||
+    el.tag === "li" ||
+    el.tag === "body" ||
+    el.tag === "section" ||
+    el.tag === "article" ||
+    el.tag === "blockquote"
+  ) {
+    const blocks: DocsJsonNode[] = [];
+    let inline: HtmlChild[] = [];
+    const flush = () => {
+      const content = inlineFromChildren(inline);
+      inline = [];
+      if (content.length) blocks.push({ type: "paragraph", content });
+    };
+    for (const child of el.children) {
+      if (child.type === "el" && blockTags.has(child.tag)) {
+        flush();
+        blocks.push(...blocksFromElement(child, warnings));
+      } else {
+        inline.push(child);
+      }
+    }
+    flush();
+    if (blocks.length) return blocks;
+    if (el.tag === "p" || el.tag === "blockquote" || el.tag === "li") return [{ type: "paragraph" }];
+    return [];
+  }
+  return [];
+}
+
+export type DocsImportDetails = {
+  content: DocsJsonNode;
+  warnings: string[];
+};
+
+export function importMarkupDetailed(text: string, kind: "txt" | "md" | "html"): DocsImportDetails {
+  const warnings: string[] = [];
+  const nodes =
+    kind === "html"
+      ? blocksFromElement(parseHtmlTree(text, warnings), warnings)
+      : kind === "md"
+        ? markdownToNodes(text)
+        : textToParagraphs(text);
+  return {
+    content: sanitizeDocsContent({ type: "doc", content: nodes }) || emptyDocsContent(),
+    warnings,
+  };
 }
 
 export function importPlainOrMarkup(text: string, kind: "txt" | "md" | "html"): DocsJsonNode {
-  const nodes =
-    kind === "html" ? htmlToNodes(text) : kind === "md" ? markdownToNodes(text) : textToParagraphs(text);
-  return sanitizeDocsContent({ type: "doc", content: nodes }) || emptyDocsContent();
+  return importMarkupDetailed(text, kind).content;
 }
 
 export function titleFromFileName(name: string): string {

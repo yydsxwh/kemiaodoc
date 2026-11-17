@@ -600,6 +600,64 @@ export async function getVodPlayUrl(
   return playUrl;
 }
 
+export type VodMezzanine =
+  | {
+      available: true;
+      fileUrl: string;
+      fileName: string;
+      sizeBytes: number;
+      status: string;
+    }
+  | { available: false; status: string; message: string };
+
+/**
+ * 取点播原片。播放地址来自 GetPlayInfo，不能当作原文件。
+ * 原片还在上传或转码、或账号没有保留原片时，明确返回不可用。
+ */
+export async function getVodMezzanine(
+  videoId: string,
+  settings?: SiteSettingsRow,
+): Promise<VodMezzanine> {
+  if (!videoId.trim()) {
+    return { available: false, status: "missing", message: "没有点播视频编号，不能下载原片" };
+  }
+  const row = settings || (await getSiteSettings());
+  if (!vodConfigured(row)) {
+    return { available: false, status: "unconfigured", message: "未配置阿里云点播，不能下载原片" };
+  }
+  try {
+    const data = (await vodRpcRequest(row, "GetMezzanineInfo", {
+      VideoId: videoId,
+    })) as {
+      Mezzanine?: {
+        FileURL?: string;
+        FileName?: string;
+        Size?: number | string;
+        Status?: string;
+      };
+    };
+    const mezzanine = data.Mezzanine;
+    const status = mezzanine?.Status || "";
+    const fileUrl = mezzanine?.FileURL || "";
+    if (!fileUrl || /upload|transcod|check|processing/i.test(status)) {
+      return {
+        available: false,
+        status: status || "processing",
+        message: "原片还在处理，或点播没有保留原文件。转码后的播放地址不是原片。",
+      };
+    }
+    return {
+      available: true,
+      fileUrl,
+      fileName: mezzanine?.FileName || "",
+      sizeBytes: Number(mezzanine?.Size || 0) || 0,
+      status: status || "Normal",
+    };
+  } catch (error) {
+    return { available: false, status: "error", message: formatVodError(error) };
+  }
+}
+
 export async function resolveMediaPlayUrl(fileUrl: string): Promise<string> {
   if (!fileUrl) return "";
   if (isVodUrl(fileUrl)) {

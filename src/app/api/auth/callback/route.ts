@@ -25,7 +25,8 @@ import {
 import {
   ACCOUNT_OIDC_TX_COOKIE,
   oidcTransactionCookieOptions,
-  verifyAccountOidcTransaction,
+  readAccountOidcTransactionByState,
+  withoutAccountOidcTransaction,
 } from "@andyyyds/shared/account-oidc-cookie";
 import { createSession } from "@andyyyds/shared/auth";
 import { getPublicSiteUrl } from "@andyyyds/shared/payments";
@@ -62,10 +63,9 @@ export async function GET(req: Request) {
   }
 
   const jar = await cookies();
-  const tx = await verifyAccountOidcTransaction(
-    jar.get(ACCOUNT_OIDC_TX_COOKIE)?.value,
-  );
-  if (!tx || !code || !state || tx.state !== state) {
+  const rawTx = jar.get(ACCOUNT_OIDC_TX_COOKIE)?.value;
+  const tx = await readAccountOidcTransactionByState(rawTx, state);
+  if (!tx || !code || !state) {
     return failRedirect(origin, "登录已过期，请重试");
   }
 
@@ -119,10 +119,16 @@ export async function GET(req: Request) {
   }
 
   const res = NextResponse.redirect(new URL(safeNextPath(tx.returnTo), origin));
-  res.cookies.set(ACCOUNT_OIDC_TX_COOKIE, "", {
-    ...oidcTransactionCookieOptions(0),
-    maxAge: 0,
-  });
+  const remainder = await withoutAccountOidcTransaction(rawTx, state);
+  if (remainder) {
+    res.cookies.set(ACCOUNT_OIDC_TX_COOKIE, remainder, oidcTransactionCookieOptions());
+  } else {
+    res.cookies.set(ACCOUNT_OIDC_TX_COOKIE, "", {
+      ...oidcTransactionCookieOptions(0),
+      maxAge: 0,
+    });
+  }
   res.headers.set("Cache-Control", "private, no-store");
   return res;
 }
+

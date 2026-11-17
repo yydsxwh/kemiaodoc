@@ -723,7 +723,7 @@ export const EXTRA_THEME_PACKS: ThemePack[] = [
     cover: "url(\"/covers/biz-ai-glow.jpg\") center/cover",
   },
   {
-    id: "pack-library",
+    id: "pack-biz-books",
     name: "书廊暖光",
     tagline: "阅读学习氛围",
     paletteId: "warm-ink",

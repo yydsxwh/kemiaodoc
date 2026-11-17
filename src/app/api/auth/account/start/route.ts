@@ -5,6 +5,7 @@
  * 选定结果写入签名事务，回调不再相信 URL 上的 client。
  */
 
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
   ACCOUNT_LOGIN_INVALID_CLIENT_MESSAGE,
@@ -24,10 +25,11 @@ import {
 import {
   ACCOUNT_OIDC_TX_COOKIE,
   oidcTransactionCookieOptions,
-  signAccountOidcTransaction,
+  rememberAccountOidcTransaction,
 } from "@andyyyds/shared/account-oidc-cookie";
 import { getPublicSiteUrl } from "@andyyyds/shared/payments";
 import { getRequestPublicOrigin } from "@andyyyds/shared/request-origin";
+import { authHandoffDocument } from "@andyyyds/shared/auth-handoff";
 import { safeNextPath } from "@andyyyds/shared/safe-next-path";
 
 export const dynamic = "force-dynamic";
@@ -47,9 +49,20 @@ function redirectToLogin(input: {
   if (input.client) dest.searchParams.set("client", input.client);
   if (input.ref) dest.searchParams.set("ref", input.ref);
   if (input.error) dest.searchParams.set("error", input.error);
-  const res = NextResponse.redirect(dest);
+  const res = NextResponse.redirect(dest, 302);
   res.headers.set("Cache-Control", "private, no-store");
   return res;
+}
+
+function handoff(location: string) {
+  const doc = authHandoffDocument(location);
+  return new NextResponse(doc.body, {
+    status: doc.status,
+    headers: {
+      "Content-Type": doc.contentType,
+      "Cache-Control": doc.cacheControl,
+    },
+  });
 }
 
 export async function GET(req: Request) {
@@ -109,7 +122,7 @@ export async function GET(req: Request) {
     redirectUri,
   });
   if (canonicalStartUrl) {
-    const res = NextResponse.redirect(canonicalStartUrl, { status: 307 });
+    const res = NextResponse.redirect(canonicalStartUrl, 302);
     res.headers.set("Cache-Control", "private, no-store");
     return res;
   }
@@ -121,22 +134,28 @@ export async function GET(req: Request) {
     nonce: randoms.nonce,
     codeVerifier: randoms.verifier,
     codeChallenge: randoms.challenge,
+    prompt: url.searchParams.get("prompt") === "login" ? "login" : undefined,
   });
+  if (url.searchParams.get("login") === "kk") authorize.searchParams.set("login", "kk");
   const dest =
     mode === "register"
       ? buildAccountRegisterUrl(authorize, referralCode)
       : authorize;
 
-  const token = await signAccountOidcTransaction({
-    state: randoms.state,
-    nonce: randoms.nonce,
-    codeVerifier: randoms.verifier,
-    returnTo,
-    mode,
-    clientKey: selection.key,
-  });
+  const jar = await cookies();
+  const token = await rememberAccountOidcTransaction(
+    jar.get(ACCOUNT_OIDC_TX_COOKIE)?.value,
+    {
+      state: randoms.state,
+      nonce: randoms.nonce,
+      codeVerifier: randoms.verifier,
+      returnTo,
+      mode,
+      clientKey: selection.key,
+    },
+  );
 
-  const res = NextResponse.redirect(dest.toString());
+  const res = handoff(dest.toString());
   res.cookies.set(
     ACCOUNT_OIDC_TX_COOKIE,
     token,
@@ -145,3 +164,4 @@ export async function GET(req: Request) {
   res.headers.set("Cache-Control", "private, no-store");
   return res;
 }
+

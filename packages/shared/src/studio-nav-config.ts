@@ -95,7 +95,7 @@ export const DEFAULT_STUDIO_NAV: StudioNavConfig = {
     { key: "person-social", label: "个人IP投稿", href: "/studio/person-social" },
     { key: "person-site", label: "个人展示后台", href: "/person-admin" },
     { key: "bg-music", label: "背景音乐", href: "/studio/bg-music" },
-    { key: "cashier", label: "支付与收银", href: "/studio/cashier" },
+    { key: "cashier", label: "支付与收银", href: "/studio/pay" },
     { key: "settings", label: "系统设置", href: "/studio/settings" },
   ],
   // 默认：创建在左；约搭与课程/资料平行（活动语义，不进课程列表）
@@ -302,10 +302,15 @@ function mergeSection(
   return order.map((key) => {
     const def = allowed.get(key)!;
     const override = overrides.get(key);
+    const storedHref = override?.href || "";
+    // 旧菜单把「支付与收银」指到会直接打 payments 接口的收银页。站长入口改到支付后台。
+    const href = key === "cashier" && (storedHref === "" || storedHref === "/studio/cashier")
+      ? def.href
+      : normalizeHref(storedHref, def.href);
     return {
       key,
       label: (override?.label.trim() || def.label).slice(0, 40),
-      href: normalizeHref(override?.href || "", def.href),
+      href,
     };
   });
 }
@@ -350,3 +355,4 @@ export function studioNavHref(
 ) {
   return items.find((item) => item.key === key)?.href || fallback;
 }
+

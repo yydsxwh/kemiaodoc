@@ -10,13 +10,14 @@ import {
   sanitizeDocsContent,
   type DocsJsonNode,
 } from "@andyyyds/docs/lib/docs-content";
-import { importPlainOrMarkup, titleFromFileName } from "@andyyyds/docs/lib/docs-html";
+import { importMarkupDetailed, titleFromFileName } from "@andyyyds/docs/lib/docs-html";
 
 export const DOCS_IMPORT_MAX_BYTES = 8 * 1024 * 1024;
 
 export type DocsImportResult = {
   title: string;
   content: DocsJsonNode;
+  warnings: string[];
 };
 
 function isZip(buf: Buffer): boolean {
@@ -36,6 +37,9 @@ function isOle(buf: Buffer): boolean {
 export async function importOfficeBuffer(
   buffer: Buffer,
   fileName: string,
+  options?: {
+    uploadImage?: (image: Buffer, contentType: string) => Promise<string>;
+  },
 ): Promise<DocsImportResult> {
   if (buffer.length > DOCS_IMPORT_MAX_BYTES) {
     throw new Error("文件不能超过 8MB");
@@ -46,11 +50,34 @@ export async function importOfficeBuffer(
   if (!isZip(buffer)) {
     throw new Error("请打开 Word / WPS（.docx）文件");
   }
-  const result = await mammoth.convertToHtml({ buffer });
+  const warnings: string[] = [];
+  const result = await mammoth.convertToHtml(
+    { buffer },
+    {
+      convertImage: mammoth.images.imgElement(async (image) => {
+        try {
+          const bytes = Buffer.from(await image.read());
+          const contentType = image.contentType || "image/png";
+          if (options?.uploadImage) {
+            const src = await options.uploadImage(bytes, contentType);
+            return { src };
+          }
+          if (bytes.length > 180_000) {
+            warnings.push("有图片较大，未登录时已跳过。登录后重新打开，图片会上传到云端。");
+            return { src: "" };
+          }
+          return { src: `data:${contentType};base64,${bytes.toString("base64")}` };
+        } catch {
+          warnings.push("有一张 Word 图片没有导入。");
+          return { src: "" };
+        }
+      }),
+    },
+  );
   const html = String(result.value || "").trim();
-  const content = html
-    ? importPlainOrMarkup(html, "html")
-    : emptyDocsContent();
-  const title = inferDocsTitle(sanitizeDocsContent(content), titleFromFileName(fileName));
-  return { title, content };
+  const imported = html ? importMarkupDetailed(html, "html") : { content: emptyDocsContent(), warnings: [] };
+  if (result.messages?.length) warnings.push("Word 里有部分格式没能保留。图片仍会按能识别的方式导入。");
+  const content = sanitizeDocsContent(imported.content);
+  const title = inferDocsTitle(content, titleFromFileName(fileName));
+  return { title, content, warnings: [...warnings, ...imported.warnings] };
 }

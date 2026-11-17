@@ -661,7 +661,7 @@ export function defaultModuleProps(type: PageModuleType): PageModulePropsMap[Pag
       };
     case "marquee":
       return {
-        text: "欢迎来到 YYDS 课程平台 · 优质课程持续上新",
+        text: "欢迎来到颗秒科技 · 优质课程持续上新",
         speed: 40,
       };
     case "socialLinks":

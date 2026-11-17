@@ -5,7 +5,7 @@
  * URL 解析会把反斜杠当成斜杠，`/\\evil.com` 会变成 https://evil.com。
  */
 
-const MAX_NEXT_LENGTH = 500;
+const MAX_NEXT_LENGTH = 1500;
 const SAFE_NEXT_ORIGIN = "https://yydsxwh.com";
 
 function hasControlChar(value: string): boolean {
@@ -53,10 +53,16 @@ export function isAuthLoopPath(pathname: string): boolean {
   return path === "/api/auth" || path.startsWith("/api/auth/");
 }
 
-/** 顶栏登录/注册：把当前页做成 next，避免固定跳个人中心 */
-export function nextFromCurrentLocation(pathname: string | null | undefined, search = ""): string {
+/** 顶栏登录/注册：把当前页做成 next，避免固定跳个人中心。hash 只在浏览器里拿得到。 */
+export function nextFromCurrentLocation(
+  pathname: string | null | undefined,
+  search = "",
+  hash = "",
+): string {
   const path = (pathname || "/").trim() || "/";
   if (!path.startsWith("/") || path.startsWith("//")) return "/";
   const query = search && !search.startsWith("?") ? `?${search}` : search;
-  return safeNextPath(`${path}${query || ""}`);
+  const fragment =
+    hash && hash !== "#" ? (hash.startsWith("#") ? hash : `#${hash}`) : "";
+  return safeNextPath(`${path}${query || ""}${fragment}`);
 }

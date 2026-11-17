@@ -123,6 +123,16 @@ export function activeAccounts(state: BrokerState): AccountRecord[] {
   return state.accounts.filter((account) => account.active);
 }
 
+/**
+ * 设备行还在，但上面没有仍然有效的账号，也没有标签页主动退出。
+ * 这时继续用旧的单会话 Cookie，避免历史上留下的空设备把人登出。
+ */
+export function legacyFallback(state: BrokerState, decision: AccessDecision): boolean {
+  if (decision.kind !== "anonymous") return false;
+  if (activeAccounts(state).length > 0) return false;
+  return !state.tabs.some((item) => !item.revoked && !item.sessionId);
+}
+
 export function roleFor(account: AccountRecord, selected: string | null | undefined): string | null {
   if (selected && account.grantedRoles.includes(selected)) return selected;
   if (account.defaultRole && account.grantedRoles.includes(account.defaultRole)) {
@@ -190,10 +200,20 @@ export function resolveAccess(
   const accounts = activeAccounts(state);
   const tab = header ? state.tabs.find((item) => item.contextId === header && !item.revoked) : undefined;
 
+  // 这个标签页主动退出后留着空绑定。不能再落入「只剩一个账号就自动登录」。
+  if (tab && !tab.sessionId) return { kind: "anonymous" };
+
   if (tab?.sessionId) {
     const account = accounts.find((item) => item.sessionId === tab.sessionId);
     if (!account) return { kind: "anonymous" };
     return ready(account, header, tab.activeRole || null);
+  }
+
+  // 文档请求没有标签页头。只要这台浏览器有一个已退出的标签页，
+  // 首屏就不能猜成那个唯一账号，否则刚退出的标签页会被画成已登录。
+  const tabSignedOut = state.tabs.some((item) => !item.revoked && !item.sessionId);
+  if (!header && tabSignedOut && accounts.length > 0) {
+    return { kind: "ambiguous", accounts: accountCards({ ...state, accounts }) };
   }
 
   if (accounts.length === 1 && !state.explicitPick) {
@@ -254,6 +274,10 @@ export function planResume(
   }
 
   const existing = state.tabs.find((item) => item.contextId === contextId && !item.revoked);
+  // 空绑定表示这个标签页已经退出。恢复时不能把它重新绑回唯一账号。
+  if (existing && !existing.sessionId) {
+    return { decision: { kind: "anonymous" }, mutations };
+  }
   if (existing?.sessionId) {
     const account = accounts.find((item) => item.sessionId === existing.sessionId);
     if (account) return { decision: ready(account, contextId, existing.activeRole || null), mutations };
@@ -489,10 +513,17 @@ window.addEventListener("pagehide",function(event){
     if(cur&&cur.instance===instance) localStorage.removeItem(beatKey);
   }catch(e){}
 });
+function sameOrigin(input){
+  try{
+    var url=typeof input==="string"?input:(typeof Request!=="undefined"&&input instanceof Request?input.url:String(input));
+    return new URL(url,location.href).origin===location.origin;
+  }catch(e){return false;}
+}
 var orig=window.fetch;
 if(typeof orig==="function"){
   window.fetch=function(input,init){
-    var headers=new Headers(init&&init.headers?init.headers:undefined);
+    if(!sameOrigin(input)) return orig.apply(this,arguments);
+    var headers=new Headers(init&&init.headers!==undefined?init.headers:(typeof Request!=="undefined"&&input instanceof Request?input.headers:undefined));
     if(!headers.has(HEADER)) headers.set(HEADER,id);
     var next=Object.assign({},init||{},{headers:headers});
     if(typeof Request!=="undefined"&&input instanceof Request) return orig.call(this,new Request(input,next));
@@ -504,3 +535,5 @@ window.__yydsTabCloneFrom=function(){try{return sessionStorage.getItem(CLONE)||"
 window.__yydsTabClearClone=function(){try{sessionStorage.removeItem(CLONE);}catch(e){}};
 })();`;
 }
+
+
