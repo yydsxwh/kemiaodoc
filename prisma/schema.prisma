@@ -1,0 +1,2305 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String             @id @default(cuid())
+  /// account OIDC 的稳定用户标识（sub=usr_xxx）。本地行只是业务投影，不是身份源。
+  accountSub   String?            @unique
+  email        String             @unique
+  passwordHash String
+  /// 是否已设置可用登录密码；手机/微信自动注册且未设密码时为 false
+  passwordSet  Boolean            @default(true)
+  /// 登出时自增；JWT.sv 对不上即视为已失效，避免旧 Cookie 重放
+  sessionEpoch Int                @default(0)
+  name         String
+  /// 账号密码登录用的登录名（小写存储）；空/null 表示未开通账号登录，与邮箱登录分开
+  username     String?            @unique
+  bio          String             @default("")
+  avatarUrl    String             @default("")
+  /// 手机号登录用；空表示未绑定。非空时应用层保证唯一
+  phone        String             @default("")
+  /// ADMIN 站长 | AGENT 加盟代理 | MERCHANT 入驻商家 | TEACHER 老师 | STUDENT 用户（见 src/lib/roles.ts）
+  /// 主角色（权限优先级最高的那一个）；与 roles 同步，兼容旧逻辑
+  role         String             @default("STUDENT")
+  /// 多角色：逗号分隔，如 "TEACHER,MERCHANT"；空则仅用 role。站长可给同一用户叠多种身份
+  roles        String             @default("")
+  /// 注册申请角色：AGENT | MERCHANT | TEACHER；空表示未申请或已处理为普通用户路径
+  requestedRole String            @default("")
+  /// NONE | PENDING | ACTIVE | REJECTED（见 src/lib/roles.ts）
+  roleApplicationStatus String    @default("NONE")
+  /// 审核备注（如拒绝原因）
+  roleApplicationNote String      @default("")
+  roleReviewedAt   DateTime?
+  roleReviewedById String?
+  /// 站长内部备注：仅后台用户管理可见，不展示给该用户本人
+  adminNote        String         @default("")
+  /// 站长备注昵称缓存。不覆盖 name。权威值在账号中心，按 accountSub 对齐。
+  adminRemarkName  String?
+  remarkEvents     AdminRemarkEvent[] @relation("RemarkTarget")
+  remarkEventsActed AdminRemarkEvent[] @relation("RemarkActor")
+  /// 微信公众号网页授权 openid（登录 / JSAPI 支付，同一 AppID 下）
+  wechatOpenId String             @default("")
+  /// 开放平台「网站应用」扫码登录 openid（与公众号 openid 不同，勿混用以免 JSAPI 失败）
+  wechatWebOpenId String          @default("")
+  /// 开放平台「移动应用」App 微信登录 openid（与网站应用 openid 不同）
+  wechatMobileOpenId String       @default("")
+  /// 开放平台 unionid（公众号/网站/移动应用绑同一开放平台时才有；跨应用识别同一微信用户）
+  wechatUnionId String            @default("")
+  referralCode String             @unique
+  referredById String?
+  referredBy   User?              @relation("Referrals", fields: [referredById], references: [id])
+  referrals    User[]             @relation("Referrals")
+  courses              Course[]           @relation("TeacherCourses")
+  /// 站长按课程授予的上传权。老师身份本身不包含这些行。
+  courseTeacherGrants  CourseTeacherGrant[] @relation("GrantedCourseTeacher")
+  courseGrantsIssued   CourseTeacherGrant[] @relation("CourseGrantGrantedBy")
+  courseGrantsRevoked  CourseTeacherGrant[] @relation("CourseGrantRevokedBy")
+  enrollments          Enrollment[]
+  orders               Order[]
+  coupons              CouponRedemption[]
+  claimedCouponInstances  CouponInstance[] @relation("CouponClaimedBy")
+  redeemedCouponInstances CouponInstance[] @relation("CouponRedeemedBy")
+  couponAuditLogs         CouponAuditLog[]
+  mediaCategories      MediaCategory[]
+  mediaAssets          MediaAsset[]
+  mediaVocabularies    MediaVocabulary[]
+  mediaOrganizeLogs    MediaOrganizeLog[]
+  commissionsEarned    Commission[]       @relation("CommissionBeneficiary")
+  commissionsAsBuyer   Commission[]       @relation("CommissionBuyer")
+  merchant             Merchant?          @relation("MerchantAccount")
+  /// 该代理发展的入驻商家
+  recruitedMerchants   Merchant[]         @relation("MerchantAgent")
+  meetupsHosted        Meetup[]           @relation("MeetupHost")
+  meetupJoins          MeetupJoin[]
+  /// 商城购物车行
+  cartItems            CartItem[]
+  chatMemberships      ChatMember[]
+  chatMessagesSent     ChatMessage[]      @relation("ChatMessageSender")
+  chatMessageHides     ChatMessageHide[]
+  chatMessageReads     ChatMessageRead[]
+  /// 学员下载课件的审计记录（防盗链追责）
+  lessonResourceDownloads LessonResourceDownload[]
+  /// 旧字段：最近进入的高校。没有单独常驻学校时，只当作免费互动范围的兼容值，不是认证。
+  forumUniversityId    String?
+  forumUniversity      ForumUniversity?   @relation("ForumLastUniversity", fields: [forumUniversityId], references: [id], onDelete: SetNull)
+  /// 常驻大学。普通公开发帖、评论免费。选择常驻学校不会变成认证。
+  forumHomeUniversityId String?
+  forumHomeUniversity   ForumUniversity?  @relation("ForumHomeUniversity", fields: [forumHomeUniversityId], references: [id], onDelete: SetNull)
+  /// 论坛跨校互动权益到期时间。只由已校验的支付履约写入，客户端不能提交。
+  forumCrossSchoolUntil DateTime?
+  forumCrossSchoolGrants ForumCrossSchoolGrant[]
+  forumPosts           ForumPost[]
+  forumComments        ForumComment[]
+  forumActions         ForumAction[]
+  watchSubscriptions   WatchSubscription[]
+  siteNotifications    SiteNotification[]
+  directConversations  DirectConversation[]
+  forumSchoolVerifications ForumSchoolVerification[]
+  campusListings       CampusListing[]       @relation("CampusListingAuthor")
+  campusParticipants   CampusParticipant[]
+  campusFavorites      CampusFavorite[]
+  campusReactions      CampusReaction[]
+  campusReviews        CampusReview[]
+  campusComments       CampusComment[]
+  campusCreditEntries  CampusCreditEntry[]
+  campusComplaints     CampusComplaint[]
+  campusResources      CampusResource[]       @relation("CampusResourceAuthor")
+  campusGuideItems     CampusGuideItem[]      @relation("CampusGuideAuthor")
+  campusGuideCheckins  CampusGuideCheckin[]
+  campusAchievements   CampusAchievementSubmission[]
+  campusStallReviews   CampusStallReview[]
+  campusMedia          CampusMedia[]
+  /// 识图转 LaTeX：会员页数 / 散买剩余页（站长不走这套账本）
+  mathcodeWallet       MathcodeWallet?
+  mathcodeUsages       MathcodeUsage[]
+  mathcodeGrants       MathcodeGrant[]
+  /// 网页文档：登录用户的云端稿
+  docsDocuments        DocsDocument[]
+  docsSpaces           DocsSpace[]
+  docsTags             DocsTag[]
+  docsShares           DocsShare[]
+  wwwDeviceAccounts    WwwDeviceAccount[]
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  /// 学员编号（历史功能写入；线上库 46 条数据保留，功能代码后续恢复）
+  kkNumber             Int?
+
+  @@index([forumUniversityId])
+  @@index([roleApplicationStatus])
+  @@index([phone])
+  @@index([wechatOpenId])
+  @@index([wechatWebOpenId])
+  @@index([wechatMobileOpenId])
+  @@index([wechatUnionId])
+  @@index([name])
+  @@index([adminRemarkName])
+}
+
+/// 站长备注昵称的操作记录。只记操作者和对象。
+model AdminRemarkEvent {
+  id              String   @id @default(cuid())
+  actorId         String
+  userId          String
+  accountPublicId String?
+  createdAt       DateTime @default(now())
+  actor           User     @relation("RemarkActor", fields: [actorId], references: [id])
+  user            User     @relation("RemarkTarget", fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+/// 站内私聊/群聊会话
+model ChatConversation {
+  id        String   @id @default(cuid())
+  /// DIRECT | GROUP
+  kind      String   @default("DIRECT")
+  /// PENDING=待对方确认(直聊) | ACTIVE=可聊天 | REJECTED | CLOSED
+  status    String   @default("PENDING")
+  /// DIRECT 时双方 userId 排序拼接，便于查重进行中的会话
+  directKey String   @default("")
+  initiatedById String
+  /// 直聊对方（DIRECT）；群聊为空
+  peerUserId String  @default("")
+  /// USER_SEARCH | PRODUCT_CONSULT | MEETUP_CONSULT | GROUP | MEETUP_GROUP | COURSE_GROUP
+  source    String   @default("USER_SEARCH")
+  relatedCourseId String @default("")
+  relatedMeetupId String @default("")
+  /// 群标题等；直聊可空（展示时用对方昵称）
+  title     String   @default("")
+  /// 群公告正文；空表示无公告
+  announcement String @default("")
+  announcementUpdatedAt DateTime?
+  announcementById String @default("")
+  lastMessageAt DateTime?
+  lastMessagePreview String @default("")
+  members   ChatMember[]
+  messages  ChatMessage[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([directKey, status])
+  @@index([status, lastMessageAt])
+  @@index([initiatedById])
+  @@index([peerUserId])
+  @@index([relatedMeetupId])
+  @@index([relatedCourseId])
+}
+
+model ChatMember {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  /// OWNER | ADMIN | MEMBER | REQUESTER | RECIPIENT
+  memberRole     String   @default("MEMBER")
+  /// ACTIVE | PENDING(邀清待同意) | REJECTED | LEFT
+  joinStatus     String   @default("ACTIVE")
+  unreadCount    Int      @default(0)
+  lastReadAt     DateTime?
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([conversationId, userId])
+  @@index([userId, unreadCount])
+  @@index([userId, joinStatus])
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  /// TEXT | IMAGE | SYSTEM | NOTICE
+  type           String   @default("TEXT")
+  body           String   @default("")
+  mediaUrl       String   @default("")
+  /// @ 提及的用户 id 列表 JSON
+  mentionJson    String   @default("[]")
+  /// 撤回时间；非空则客户端展示「已撤回」
+  recalledAt     DateTime?
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User     @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  hides          ChatMessageHide[]
+  reads          ChatMessageRead[]
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+/// 消息已读回执（群聊为主；直聊也可写）
+model ChatMessageRead {
+  id        String      @id @default(cuid())
+  messageId String
+  userId    String
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt    DateTime    @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+/// 本地删除：仅对该用户隐藏，不删库、不影响对方可见
+model ChatMessageHide {
+  id        String      @id @default(cuid())
+  messageId String
+  userId    String
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+/// 约搭活动：线下结伴 / 兴趣搭子；可免费或付费报名（付费复用 Course+Order 支付与分销）
+/// 详情页对齐「一起玩」类结构：封面、分档名额、安心卡片、怎么玩、图集、底栏上车
+model Meetup {
+  id          String       @id @default(cuid())
+  title       String
+  /// 短简介（广场卡片/兼容旧数据）；富媒体正文见 contentHtml
+  description String       @default("")
+  /// 富媒体详情 HTML（图文视频）；空则详情页回退展示 description
+  contentHtml String       @default("")
+  /// 报名费（分）；0=免费，走直接报名；>0 须下单支付（可叠加优惠券）；各分档同价
+  priceCents  Int          @default(0)
+  /// SPORT | FOOD | GAME | STUDY | TRAVEL | OTHER（见 src/lib/meetup.ts）
+  category    String       @default("OTHER")
+  /// 活动开始时间（UTC 存库；展示/编辑按 timezone 墙钟）
+  startsAt    DateTime
+  /// 活动结束时间（可选；UTC 存库）
+  endsAt      DateTime?
+  /// IANA 时区（如 Asia/Shanghai）；开始/结束墙钟均相对此时区，默认北京时间
+  timezone    String       @default("Asia/Shanghai")
+  /// 城市或地点（自由文本，便于手机端快速填写）
+  place       String
+  /// 可选纬度（WGS84）；有则广场「距离最近」可按 Haversine 算；旧数据为空
+  latitude    Float?
+  /// 可选经度（WGS84）；须与 latitude 成对才参与距离排序
+  longitude   Float?
+  /// 人数上限（含发起人）；多档时为各档上限之和，便于 FULL 判定
+  /// BigInt：业务上限可达 2000 亿，超过 SQLite/Prisma Int（约 21 亿）
+  maxPeople   BigInt       @default(4)
+  /// 可选封面图 URL
+  coverUrl    String       @default("")
+  /// 玩法标签 JSON 字符串数组，如 ["新手友好","开心社交"]
+  tagsJson    String       @default("")
+  /// 「参与更安心 · 费用包含」文案
+  feeIncludes String       @default("")
+  /// 「参与更安心 · 退款政策」文案
+  refundPolicy String      @default("")
+  /// 是否展示「自动退」标签（规则仍以 refundPolicy 文案为准，降低对接支付原路退成本）
+  autoRefund  Boolean      @default(false)
+  /// 「大家这样玩」图集 JSON URL 数组
+  galleryJson String       @default("")
+  /// 联系方式外链（无 IM 时群聊/私聊跳转；空则底栏隐藏聊天入口）
+  contactUrl  String       @default("")
+  /// 集合地（空则详情回退 place，兼容旧数据）
+  meetingPoint String      @default("")
+  /// 目的地（出行类常用；可空）
+  destination  String      @default("")
+  /// 活动亮点一行文案（如返现/成团说明）
+  highlights   String      @default("")
+  /// 管理员/领队电话（详情「拨打电话」；亦并入咨询弹层）
+  adminPhone   String      @default("")
+  /// 客服电话列表 JSON：[{label,phone}]；空则咨询弹层回退站点「联系我们」
+  servicePhonesJson String  @default("")
+  /// 微信客服：https 链接 / 企微 / 微信号（非链接时前端复制）
+  wechatService   String   @default("")
+  /// 行程安排富文本（内容 Tab）；空则该 Tab 显示占位
+  itineraryHtml   String   @default("")
+  /// 费用说明富文本；空则回退 feeIncludes/refundPolicy
+  feeNoteHtml     String   @default("")
+  /// 注意事项富文本
+  notesHtml       String   @default("")
+  /// OPEN | FULL | CLOSED | CANCELLED
+  status      String       @default("OPEN")
+  hostId      String
+  host        User         @relation("MeetupHost", fields: [hostId], references: [id], onDelete: Cascade)
+  /// 关联可售 Course（productType=MEETUP），复用订单/微信JSAPI/分销/优惠券
+  productCourseId String?  @unique
+  productCourse   Course?  @relation("MeetupProduct", fields: [productCourseId], references: [id], onDelete: SetNull)
+  slots       MeetupSlot[]
+  joins       MeetupJoin[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([status, startsAt])
+  @@index([category])
+  @@index([hostId])
+}
+
+/// 约搭分档名额（如「新手局」「对抗局」）；旧活动无档时详情页虚拟单档
+model MeetupSlot {
+  id        String       @id @default(cuid())
+  meetupId  String
+  /// 档位名称，如新手局
+  name      String
+  /// 本档人数上限（含发起人若分到本档）；BigInt 同 Meetup.maxPeople，可超 Int 上限
+  maxPeople BigInt       @default(2)
+  sortOrder Int          @default(0)
+  meetup    Meetup       @relation(fields: [meetupId], references: [id], onDelete: Cascade)
+  joins     MeetupJoin[]
+  createdAt DateTime     @default(now())
+
+  @@index([meetupId, sortOrder])
+}
+
+/// 约搭报名：一人一局唯一；发起人创建时自动写入；可归属某一档
+model MeetupJoin {
+  id        String      @id @default(cuid())
+  meetupId  String
+  userId    String
+  /// 所属分档；旧数据可为空（计入活动总人数）
+  slotId    String?
+  /// 本单占用名额（含本人）；代多人报名时 >1，用于余位扣减（非「账号数」）
+  partySize Int         @default(1)
+  meetup    Meetup      @relation(fields: [meetupId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slot      MeetupSlot? @relation(fields: [slotId], references: [id], onDelete: SetNull)
+  createdAt DateTime    @default(now())
+
+  @@unique([meetupId, userId])
+  @@index([userId])
+  @@index([slotId])
+}
+
+/// 短信验证码（手机号登录 / 绑定）；哈希存储，短时有效
+model SmsCode {
+  id        String    @id @default(cuid())
+  phone     String
+  /// bcrypt 后的 6 位验证码
+  codeHash  String
+  /// login | bind
+  purpose   String    @default("login")
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([phone, purpose])
+  @@index([expiresAt])
+}
+
+model Merchant {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation("MerchantAccount", fields: [userId], references: [id], onDelete: Cascade)
+  storeName     String
+  contactName   String    @default("")
+  contactPhone  String    @default("")
+  contactWechat String    @default("")
+  joinType      String    @default("DIRECT")
+  status        String    @default("PENDING")
+  notes         String    @default("")
+  /// 发展该商家的加盟代理（User.id，角色应为 AGENT）
+  agentId       String?
+  agent         User?     @relation("MerchantAgent", fields: [agentId], references: [id], onDelete: SetNull)
+  approvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status])
+  @@index([joinType])
+  @@index([agentId])
+}
+
+model DistributionConfig {
+  id            String   @id @default("default")
+  enabled       Boolean  @default(true)
+  level1Percent Int      @default(20)
+  level2Percent Int      @default(10)
+  level3Percent Int      @default(5)
+  updatedAt     DateTime @updatedAt
+}
+
+/// 站长系统设置（支付 / 存储），单例 id = default
+model SiteSettings {
+  id String @id @default("default")
+
+  siteUrl String @default("")
+
+  /// mock | auto | wechat | alipay | both
+  paymentMode   String  @default("auto")
+  wechatEnabled Boolean @default(true)
+  alipayEnabled Boolean @default(false)
+
+  wechatAppId         String @default("")
+  /// 公众号/服务号 AppSecret（网页授权换 openid，JSAPI 支付需要）
+  wechatAppSecret     String @default("")
+  /// 公众号连接 / 上传 / 草稿检测记录（JSON）。只有时间和错误码，不含 Secret 或 token
+  wechatOfficialProbeJson String @default("")
+  /// 开放平台「网站应用」AppID（PC/浏览器微信扫码登录，与公众号 AppID 分开）
+  wechatWebAppId      String @default("")
+  /// 开放平台「网站应用」AppSecret（扫码登录用；可与环境变量 WECHAT_WEB_APP_SECRET 二选一）
+  wechatWebAppSecret  String @default("")
+  /// 开放平台「移动应用」AppID（Android App 调起微信快捷登录）
+  wechatMobileAppId     String @default("")
+  /// 开放平台「移动应用」AppSecret（服务端用 code 换 openid）
+  wechatMobileAppSecret String @default("")
+  wechatMchId         String @default("")
+  wechatApiV3Key      String @default("")
+  wechatMchSerialNo   String @default("")
+  wechatMchPrivateKey String @default("")
+
+  alipayAppId      String @default("")
+  alipayPrivateKey String @default("")
+  alipayPublicKey  String @default("")
+  /// sandbox | production
+  alipayGateway    String @default("production")
+
+  /// 其他文件（图片/附件）存储：LOCAL | ALIYUN_OSS
+  storageProvider   String @default("LOCAL")
+  ossRegion         String @default("")
+  ossBucket         String @default("")
+  ossAccessKeyId    String @default("")
+  ossAccessKeySecret String @default("")
+  ossEndpoint       String @default("")
+  ossPublicBaseUrl  String @default("")
+  ossPrefix         String @default("uploads")
+
+  /// 课程视频存储：LOCAL | ALIYUN_VOD（与 OSS 可同时启用）
+  videoStorageProvider String @default("LOCAL")
+  vodRegionId          String @default("cn-shanghai")
+  vodAccessKeyId       String @default("")
+  vodAccessKeySecret   String @default("")
+  /// 不转码模板组，常见值 VOD_NO_TRANSCODE
+  vodTemplateGroupId   String @default("VOD_NO_TRANSCODE")
+  /// 播放域名（选填，不含协议）
+  vodPlayDomain        String @default("")
+
+  /// 后台/表单文案配置（JSON），属轻量 CMS，不是店铺装修
+  uiCopyJson String @default("")
+
+  /// 下单信息采集字段配置（JSON）：商家自定义「所在学校」等表单项
+  orderFormJson String @default("")
+
+  /// 店铺 DIY 装修配置（JSON）：Logo、首页 Banner 等视觉门面
+  decorateJson String @default("")
+
+  /// 页面模板 DIY（JSON）：模块编排布局；与 decorateJson（主题/配色皮肤）分离
+  pageTemplatesJson String @default("")
+
+  /// 后台导航菜单配置（JSON）：顶部导航 + 课程中心子菜单的文案与链接
+  studioNavJson String @default("")
+
+  /// 前台门户配置（JSON）：门户导航 + 公司/个人介绍文案
+  portalJson String @default("")
+
+  /// 入驻商家平台抽成比例（%），按订单实付 amount 计算；默认 10
+  merchantPlatformCutPercent Int @default(10)
+  /// 加盟代理从「商家平台抽成」中再分得的比例（%）；默认 30
+  agentShareOfPlatformCutPercent Int @default(30)
+  /// 加盟代理：其邀请用户成交订单的分成比例（% of 实付）；默认 10
+  agentBuyerOrderPercent Int @default(10)
+  /// 老师分销：其邀请用户成交订单的分成比例（% of 实付）；默认 8
+  teacherDistributionPercent Int @default(8)
+  /// 用户分销提成：其邀请用户成交订单的分成比例（% of 实付）；默认 5
+  userDistributionPercent Int @default(5)
+
+  /// 前台营销面隐藏所有产品价格（结账/订单仍显示应付金额）
+  hideAllPrices Boolean @default(false)
+  /// 隐藏前台社交私聊/群聊（找人、建群、班级/约搭群）；产品咨询私信仍保留
+  hideSocialChat Boolean @default(false)
+
+  /// 浏览器语言无匹配时的回退 locale（如 zh-Hans / en）
+  defaultLocale String @default("zh-Hans")
+  /// 已启用语种 JSON 数组，空则用内置默认列表
+  enabledLocalesJson String @default("")
+  /// OpenAI 兼容翻译接口（正文一键翻译）；空则仅界面词条+简繁
+  translateApiBaseUrl String @default("")
+  translateApiKey String @default("")
+  translateApiModel String @default("gpt-4o-mini")
+  /// 全局 AI 备用模型。空则不自动切换。
+  translateApiFallbackModel String @default("")
+  /// 全局 AI 请求超时（毫秒）
+  translateTimeoutMs Int @default(45000)
+  /// 全局 AI 失败后的额外重试次数
+  translateMaxRetries Int @default(1)
+  /// 各提供商凭据互不覆盖。当前生效的那一家同时镜像到 translateApi*。
+  aiCatalogJson String @default("")
+
+  /// 短信：是否启用手机号验证码登录
+  smsEnabled Boolean @default(false)
+  /// test = 仅测试（打日志 / 固定码）；aliyun = 阿里云短信
+  smsProvider String @default("test")
+  smsAccessKeyId String @default("")
+  smsAccessKeySecret String @default("")
+  /// 短信签名，如「某某教育」
+  smsSignName String @default("")
+  /// 模板 CODE，须含 ${code} 变量
+  smsTemplateCode String @default("")
+  /// 测试模式：不调运营商，验证码写服务端日志；可配固定码便于联调
+  smsTestMode Boolean @default(true)
+  /// 测试固定验证码（仅 testMode 时生效）；空则每次随机并打日志
+  smsTestFixedCode String @default("123456")
+  /// 分场景短信模板 CODE（历史功能写入；线上数据保留，功能代码后续恢复）
+  smsTemplateCodeLogin    String?
+  smsTemplateCodeRegister String?
+  smsTemplateCodeBind     String?
+
+  /// 全站背景音乐歌单（JSON）：开关、循环、曲目列表（upload/url/stock/netease）
+  bgMusicJson String @default("")
+  /// Jamendo 免费 API Client ID（站长自助申请）；用于检索可商用免版税曲目
+  jamendoClientId String @default("")
+
+  /// 大学论坛全站配置（JSON）：成员发帖/评论/互动/私信开关 + 顶部公告栏
+  forumJson String @default("")
+
+  /// 个人IP外平台主页（JSON）：B站/抖音/小红书/视频号主页，用于同步投稿到「个人介绍」
+  personSocialJson String @default("")
+
+  /// 高德 Web 服务 Key：论坛/约搭搜国内店名与反查地址；空则回退 OSM
+  amapWebKey String @default("")
+
+  /// 中国象棋站长配置（JSON）。API Key 只存在这里，接口对外只回掩码。
+  xiangqiJson String @default("")
+
+  updatedAt DateTime @updatedAt
+}
+
+model Commission {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  beneficiaryId String
+  beneficiary   User     @relation("CommissionBeneficiary", fields: [beneficiaryId], references: [id])
+  buyerId       String
+  buyer         User     @relation("CommissionBuyer", fields: [buyerId], references: [id])
+  level         Int
+  ratePercent   Int
+  amount        Int
+  status        String   @default("SETTLED")
+  createdAt     DateTime @default(now())
+
+  @@index([beneficiaryId])
+  @@index([orderId])
+}
+
+model MediaCategory {
+  id        String       @id @default(cuid())
+  name      String
+  ownerId   String
+  owner     User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  /// 空表示根分类。旧的单层分类保持为根，id 不变。
+  parentId  String?
+  parent    MediaCategory?  @relation("MediaCategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children  MediaCategory[] @relation("MediaCategoryTree")
+  sortOrder Int          @default(0)
+  /// 根节点写空字符串。SQLite 的 UNIQUE 不把多个 NULL 视为冲突，所以不能只用 parentId。
+  parentKey String       @default("")
+  assets    MediaAsset[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([ownerId, parentKey, name])
+  @@index([ownerId, parentId, sortOrder])
+}
+
+model MediaAsset {
+  id          String         @id @default(cuid())
+  name        String
+  description String         @default("")
+  /// 媒体类型 mediaKind：VIDEO | IMAGE | AUDIO | DOCUMENT | OTHER（按 MIME/扩展名自动识别；与用户自由分类 category 分离）
+  type        String         @default("VIDEO")
+  fileUrl     String
+  fileName    String         @default("")
+  mimeType    String         @default("")
+  sizeBytes   Int            @default(0)
+  durationSec Int            @default(0)
+  /// LOCAL | ALIYUN_OSS | ALIYUN_VOD | EXTERNAL
+  storageProvider String     @default("LOCAL")
+  /// 阿里云点播 VideoId
+  vodVideoId  String         @default("")
+  ownerId     String
+  owner       User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  /// 用户自由分类（文件夹），不是媒体类型。空表示待整理。
+  categoryId  String?
+  category    MediaCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// 一次上传的幂等键。同一键重复登记时返回原素材，不新建。
+  uploadSessionId String?    @unique
+  lessons     Lesson[]
+  vocabularyLinks MediaAssetVocabulary[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([ownerId, createdAt])
+  @@index([ownerId, categoryId, createdAt])
+  @@index([ownerId, type, createdAt])
+}
+
+/// 用途、学校、学期、标签。稳定 id 与名称分开，改名不影响已保存的筛选关系。
+model MediaVocabulary {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  /// PURPOSE | SCHOOL | TERM | TAG
+  kind      String
+  name      String
+  /// 仅学校：用户明确选择的「通用」。留空不是通用。
+  isGeneral Boolean  @default(false)
+  sortOrder Int      @default(0)
+  links     MediaAssetVocabulary[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([ownerId, kind, name])
+  @@index([ownerId, kind, sortOrder])
+}
+
+model MediaAssetVocabulary {
+  assetId      String
+  vocabularyId String
+  asset        MediaAsset      @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  vocabulary   MediaVocabulary @relation(fields: [vocabularyId], references: [id], onDelete: Cascade)
+
+  @@id([assetId, vocabularyId])
+  @@index([vocabularyId])
+}
+
+/// 批量整理的前后差异。撤销时只退回仍然等于 after 的字段。
+model MediaOrganizeLog {
+  id         String    @id @default(cuid())
+  ownerId    String
+  owner      User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  actorId    String
+  action     String
+  assetCount Int
+  diffJson   String
+  undoneAt   DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([ownerId, createdAt])
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String   @default("")
+  courses     Course[]
+  createdAt   DateTime @default(now())
+}
+
+model Course {
+  id            String       @id @default(cuid())
+  title         String
+  slug          String       @unique
+  subtitle      String       @default("")
+  description   String
+  coverUrl      String       @default("")
+  /// 商城多图（JSON 字符串数组）；首图可与 coverUrl 一致
+  galleryJson   String       @default("")
+  /// 商城简化规格（JSON）：{ options: [{ name, values: string[] }] }
+  specsJson     String       @default("")
+  price         Int          @default(0)
+  originalPrice Int          @default(0)
+  status        String       @default("DRAFT")
+  productType   String       @default("COURSE")
+  isFree        Boolean      @default(false)
+  /// 前台营销面隐藏本商品价格（结账/订单仍显示应付金额）
+  hidePrice     Boolean      @default(false)
+  studentCount  Int          @default(0)
+  rating        Float        @default(5)
+  /// 前台展示次序（越小越靠前）；置顶优先于此字段，见 productPlazaOrderBy
+  sortOrder     Int          @default(0)
+  /// 置顶：前台列表优先展示（优先于 sortOrder）
+  isPinned      Boolean      @default(false)
+  /// 精华：角标/分区标记，不参与排序，避免与置顶语义混淆
+  isFeatured    Boolean      @default(false)
+  teacherId     String
+  teacher       User         @relation("TeacherCourses", fields: [teacherId], references: [id])
+  /// 站长授予其他老师的上传权。不改变 teacherId，也不转移商品归属。
+  teacherGrants CourseTeacherGrant[]
+  categoryId    String?
+  category      Category?    @relation(fields: [categoryId], references: [id])
+  chapters      Chapter[]
+  enrollments   Enrollment[]
+  orders        Order[]
+  cartItems     CartItem[]
+  /// 本专栏包含的单课（仅 productType=COLUMN 使用）
+  bundleItems   CourseBundleItem[] @relation("ColumnBundles")
+  /// 本单课被哪些专栏套餐引用
+  bundledIn     CourseBundleItem[] @relation("BundledInColumns")
+  /// 指定适用本商品的优惠券（productScope=SELECTED）
+  couponProducts CouponProduct[]
+  couponCampaignProducts CouponCampaignProduct[]
+  /// 约搭活动挂的可售壳商品（至多一条）
+  meetupProduct Meetup? @relation("MeetupProduct")
+  /// 购买成功后赠送的知识圈权益。空字符串表示不赠送。JSON：{ communityId, durationDays?, endsAt? }
+  knowledgeGrantJson String @default("")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status, productType, isPinned, sortOrder])
+}
+
+/// 一门课上某位老师的上传授权。同一课程和老师只有一行，重复保存走更新。
+model CourseTeacherGrant {
+  id               String    @id @default(cuid())
+  courseId         String
+  teacherId        String
+  /// 允许上传课程视频，并挂到已有课时或在已有章节里新增课时
+  canUploadVideo   Boolean   @default(false)
+  /// 允许给课时上传或挂接讲义课件
+  canUploadHandout Boolean   @default(false)
+  /// false 表示已撤销。记录保留，已上传的视频和讲义不删。
+  active           Boolean   @default(true)
+  grantedById      String
+  revokedById      String?
+  grantedAt        DateTime  @default(now())
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  course           Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  teacher          User      @relation("GrantedCourseTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  grantedBy        User      @relation("CourseGrantGrantedBy", fields: [grantedById], references: [id], onDelete: Restrict)
+  revokedBy        User?     @relation("CourseGrantRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  @@unique([courseId, teacherId])
+  @@index([teacherId, active])
+  @@index([courseId, active])
+}
+
+/// 商城购物车：按用户+商品+规格去重；登录后服务端持久化（本地也可暂存）
+model CartItem {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String
+  quantity  Int      @default(1)
+  /// 规格文案快照，如「颜色:红 / 尺码:M」；无规格为空串
+  specLabel String   @default("")
+  /// 是否勾选参与结算（对标淘宝购物车勾选）
+  selected  Boolean  @default(true)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, courseId, specLabel])
+  @@index([userId])
+}
+
+/// 专栏套餐成员：一门专栏打包多门单课（买专栏开通各单课权限）
+model CourseBundleItem {
+  id        String   @id @default(cuid())
+  columnId  String
+  courseId  String
+  sortOrder Int      @default(0)
+  column    Course   @relation("ColumnBundles", fields: [columnId], references: [id], onDelete: Cascade)
+  course    Course   @relation("BundledInColumns", fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([columnId, courseId])
+  @@index([courseId])
+}
+
+model Chapter {
+  id        String   @id @default(cuid())
+  title     String
+  sortOrder Int      @default(0)
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons   Lesson[]
+  createdAt DateTime @default(now())
+}
+
+model Lesson {
+  id           String           @id @default(cuid())
+  title        String
+  sortOrder    Int              @default(0)
+  type         String           @default("VIDEO")
+  content      String           @default("")
+  videoUrl     String           @default("")
+  durationSec  Int              @default(0)
+  isPreview    Boolean          @default(false)
+  liveAt       DateTime?
+  chapterId    String
+  chapter      Chapter          @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  mediaAssetId String?
+  mediaAsset   MediaAsset?      @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  /// 谁创建了这节课。空表示迁移前就存在的课时，获授权老师不能借此改结构。
+  createdById  String?
+  /// 谁把当前视频挂到这节课。空且已有视频视为所有者原有内容，获授权老师不能覆盖。
+  videoAttachedById String?
+  progress     LessonProgress[]
+  /// 课时附属课件（讲义/PDF 等），与主媒体素材分离
+  resources    LessonResource[]
+  createdAt    DateTime         @default(now())
+}
+
+/// 课时课件资料：绑定到具体 Lesson，学员须报名后经签名链下载
+model LessonResource {
+  id        String                   @id @default(cuid())
+  lessonId  String
+  title     String
+  fileName  String
+  fileUrl   String
+  mimeType  String                   @default("")
+  sizeBytes Int                      @default(0)
+  sortOrder Int                      @default(0)
+  /// 谁上传或从自己的素材库挂接了这份讲义。空表示所有者原有课件。
+  uploadedById String?
+  lesson    Lesson                   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  downloads LessonResourceDownload[]
+  createdAt DateTime                 @default(now())
+
+  @@index([lessonId])
+}
+
+/// 课件下载审计：每次下载记一条，便于工作室进度页与追责
+model LessonResourceDownload {
+  id           String         @id @default(cuid())
+  resourceId   String
+  userId       String
+  enrollmentId String
+  resource     LessonResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime       @default(now())
+
+  @@index([resourceId, userId])
+  @@index([enrollmentId])
+}
+
+model Enrollment {
+  id        String           @id @default(cuid())
+  userId    String
+  courseId  String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course    Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  progress  LessonProgress[]
+  createdAt DateTime         @default(now())
+
+  @@unique([userId, courseId])
+}
+
+model LessonProgress {
+  id           String     @id @default(cuid())
+  enrollmentId String
+  lessonId     String
+  completed    Boolean    @default(false)
+  /// 最近播放到的秒数（断点续看）
+  positionSec  Int        @default(0)
+  /// 累计有效观看秒数（正放累加，用于后台「学习时长」）
+  watchedSec   Int        @default(0)
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  lesson       Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([enrollmentId, lessonId])
+}
+
+/// 优惠券：比例折扣（PERCENT）或定额减免（FIXED）。金额单位均为分。
+model Coupon {
+  id    String @id @default(cuid())
+  /// 兑换码（存大写）
+  code  String @unique
+  title String
+  /// PERCENT = 按比例减免；FIXED = 固定金额减免
+  type  String @default("FIXED")
+  /// FIXED：减免金额（分）；PERCENT 时为 0
+  discountCents Int @default(0)
+  /// PERCENT：减免百分比 1–99（如 10 = 减 10% ≈ 九折）；FIXED 时为 0
+  percentOff Int @default(0)
+  /// 最低消费门槛（分），0 表示不限制
+  minAmount Int @default(0)
+  /// 全站总库存（可兑换次数上限）
+  maxUses   Int @default(100)
+  usedCount Int @default(0)
+  /// 每用户限用次数（MVP 与 CouponRedemption 唯一约束一致，默认 1）
+  maxPerUser Int @default(1)
+  /// 有效期起止（可选；空表示不限制对应端）
+  startsAt  DateTime?
+  expiresAt DateTime?
+  isActive  Boolean @default(true)
+  /// ALL = 全站商品；SELECTED = 仅适用于 products 关联的商品（1 个或多个）
+  productScope String @default("ALL")
+  /// 创建者（站长/商家/代理）；便于后续按归属筛选
+  createdById String @default("")
+  products    CouponProduct[]
+  redemptions CouponRedemption[]
+  orders      Order[]
+  createdAt   DateTime @default(now())
+}
+
+/// 优惠券适用商品（仅 productScope=SELECTED 时有意义；可挂 1 个或多个商品）
+model CouponProduct {
+  id       String @id @default(cuid())
+  couponId String
+  courseId String
+  coupon   Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, courseId])
+  @@index([courseId])
+}
+
+model CouponRedemption {
+  id        String   @id @default(cuid())
+  couponId  String
+  userId    String
+  coupon    Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([couponId, userId])
+}
+
+/// 优惠券活动。一张旧公共券码最多对应一个活动，额度不另起一份。
+model CouponCampaign {
+  id            String    @id @default(cuid())
+  /// 后台批次号，不是领取凭据，也不等于旧公共券码
+  code          String    @unique
+  name          String
+  description   String    @default("")
+  type          String    @default("FIXED")
+  discountCents Int       @default(0)
+  percentOff    Int       @default(0)
+  /// 原承诺发行量，等于旧 maxUses，不按新旧各算一份
+  issueCount    Int
+  serialSeq     Int       @default(0)
+  maxPerUser    Int       @default(1)
+  minAmount     Int       @default(0)
+  productScope  String    @default("ALL")
+  claimStartsAt DateTime?
+  claimEndsAt   DateTime?
+  startsAt      DateTime?
+  expiresAt     DateTime?
+  isActive      Boolean   @default(true)
+  deletedAt     DateTime?
+  createdById   String    @default("")
+  /// 旧 Coupon.id。有值则新旧入口共用这一活动的实例池。
+  legacyCouponId String?  @unique
+  /// 非空表示剩余额度还没核清，禁止补发未领取券，结算仍走旧计数。
+  budgetHoldReason String @default("")
+  products      CouponCampaignProduct[]
+  instances     CouponInstance[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([createdById, deletedAt])
+  @@index([isActive, deletedAt])
+}
+
+model CouponCampaignProduct {
+  id         String         @id @default(cuid())
+  campaignId String
+  courseId   String
+  campaign   CouponCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  course     Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, courseId])
+  @@index([courseId])
+}
+
+/// 一张可单独查看、分享和核销的券。source 标明是新发行还是旧订单归集。
+model CouponInstance {
+  id                 String    @id @default(cuid())
+  campaignId         String
+  serialNo           String    @unique
+  tokenHash          String    @unique
+  tokenEncrypted     String
+  tokenHint          String
+  /// AVAILABLE | CLAIMED | RESERVED | REDEEMED | EXPIRED | DISABLED
+  status             String    @default("AVAILABLE")
+  /// ISSUED | LEGACY_PAID | LEGACY_PENDING | LEGACY_REDEMPTION
+  source             String    @default("ISSUED")
+  claimedByUserId    String?
+  claimedAt          DateTime?
+  redeemedByUserId   String?
+  redeemedAt         DateTime?
+  redeemedOrderId    String?   @unique
+  reservedOrderId    String?   @unique
+  reservedAt         DateTime?
+  disabledAt         DateTime?
+  version            Int       @default(0)
+  legacyCouponId     String?
+  legacyRedemptionId String?   @unique
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  campaign   CouponCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  claimedBy  User?          @relation("CouponClaimedBy", fields: [claimedByUserId], references: [id])
+  redeemedBy User?          @relation("CouponRedeemedBy", fields: [redeemedByUserId], references: [id])
+  orders     Order[]        @relation("OrderCouponInstance")
+
+  @@index([campaignId, status])
+  @@index([campaignId, serialNo])
+  @@index([claimedByUserId])
+  @@index([legacyCouponId])
+}
+
+model CouponAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String
+  campaignId String?
+  instanceId String?
+  detail     String   @default("")
+  createdAt  DateTime @default(now())
+  actor      User     @relation(fields: [actorId], references: [id])
+
+  @@index([campaignId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+/// 个人IP从 B站 / 抖音 / 小红书 / 视频号同步来的投稿（展示在「个人介绍」）
+model PersonSocialPost {
+  id          String    @id @default(cuid())
+  /// BILIBILI | DOUYIN | XIAOHONGSHU | WECHAT_CHANNELS
+  platform    String
+  /// 平台侧稳定 id：bvid / aweme_id / 笔记 id / 视频号 exportId
+  externalId  String
+  title       String    @default("")
+  digest      String    @default("")
+  coverUrl    String    @default("")
+  sourceUrl   String    @default("")
+  /// video=视频投稿，article=专栏/图文，note=笔记
+  contentKind String    @default("video")
+  publishedAt DateTime?
+  syncedAt    DateTime  @default(now())
+  isDeleted   Boolean   @default(false)
+  sortOrder   Int       @default(0)
+  isPinned    Boolean   @default(false)
+  isFeatured  Boolean   @default(false)
+  albumItems  PersonSocialAlbumItem[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([platform, externalId])
+  @@index([isDeleted, isPinned, sortOrder])
+  @@index([publishedAt])
+  @@index([platform])
+}
+
+/// 个人IP合集（B站合集/系列、各平台粘贴的合集链接），对标公司介绍的公众号专辑
+model PersonSocialAlbum {
+  id         String   @id @default(cuid())
+  platform   String
+  externalId String
+  title      String   @default("")
+  coverUrl   String   @default("")
+  sourceUrl  String   @default("")
+  syncedAt   DateTime @default(now())
+  items      PersonSocialAlbumItem[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([platform, externalId])
+  @@index([platform])
+}
+
+model PersonSocialAlbumItem {
+  id           String            @id @default(cuid())
+  albumId      String
+  sortOrder    Int               @default(0)
+  title        String            @default("")
+  coverUrl     String            @default("")
+  sourceUrl    String            @default("")
+  sourceUrlKey String            @default("")
+  postLocalId  String?
+  album        PersonSocialAlbum @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  post         PersonSocialPost? @relation(fields: [postLocalId], references: [id], onDelete: SetNull)
+
+  @@index([albumId, sortOrder])
+  @@index([sourceUrlKey])
+}
+
+/// 个人展示站档案。单独一张表，以后拆独立域名/服务器时整包迁走即可。
+model PersonProfile {
+  id          String   @id @default("default")
+  displayName String   @default("")
+  headline    String   @default("")
+  about       String   @default("")
+  avatarUrl   String   @default("")
+  coverUrl    String   @default("")
+  location    String   @default("")
+  email       String   @default("")
+  phone       String   @default("")
+  wechat      String   @default("")
+  qq          String   @default("")
+  website     String   @default("")
+  github      String   @default("")
+  linkedin    String   @default("")
+  zhihu       String   @default("")
+  weibo       String   @default("")
+  /// [{label,value,href}] 额外联系方式，避免每加一种就改表
+  extraContacts String @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// 个人展示站条目：简历/视频介绍/项目/博客/作品/荣誉/成绩/实践/活动/兴趣/照片
+model PersonEntry {
+  id         String    @id @default(cuid())
+  /// RESUME | INTRO_VIDEO | PROJECT | BLOG | PORTFOLIO | HONOR | GRADE | PRACTICE | ACTIVITY | INTEREST | PHOTO
+  kind       String
+  title      String    @default("")
+  summary    String    @default("")
+  body       String    @default("")
+  coverUrl   String    @default("")
+  /// 作品/相册多图 JSON 字符串数组
+  images     String    @default("[]")
+  /// [{id,name,url,mime,size,kind}] 栏目附件：文档/视频/代码/压缩包等
+  files      String    @default("[]")
+  org        String    @default("")
+  role       String    @default("")
+  period     String    @default("")
+  location   String    @default("")
+  link       String    @default("")
+  sortOrder  Int       @default(0)
+  published  Boolean   @default(true)
+  featured   Boolean   @default(false)
+  occurredAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([kind, published, sortOrder])
+  @@index([kind, featured])
+}
+
+/// 公众号已发表图文（freepublish 同步到本站「公司宣传」）
+model WechatMpArticle {
+  id           String   @id @default(cuid())
+  /// 微信 article_id
+  articleId    String
+  /// 多图文中的序号（从 0 起）
+  itemIndex    Int      @default(0)
+  title        String   @default("")
+  author       String   @default("")
+  digest       String   @default("")
+  contentHtml  String   @default("")
+  thumbUrl     String   @default("")
+  /// 微信原文链接，用于合集匹配与「打开原文」
+  wechatUrl    String   @default("")
+  /// URL 规范化后的键，便于合集匹配
+  wechatUrlKey String   @default("")
+  publishedAt  DateTime?
+  syncedAt     DateTime @default(now())
+  isDeleted    Boolean  @default(false)
+  /// 前台「最新图文」展示次序（越小越靠前）；置顶优先于此字段
+  sortOrder    Int      @default(0)
+  /// 置顶：前台列表优先于非置顶，再按 sortOrder / 发布时间
+  isPinned     Boolean  @default(false)
+  /// 精华：前台角标，不参与排序（与商品管理语义一致）
+  isFeatured   Boolean  @default(false)
+  /// 推文类型：news=图文文章，newspic=贴图（图片消息整篇），绝不是素材库单图
+  contentKind  String   @default("news")
+  albumItems   WechatMpAlbumItem[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([articleId, itemIndex])
+  @@index([wechatUrlKey])
+  @@index([publishedAt])
+  @@index([isDeleted, isPinned, sortOrder])
+  @@index([contentKind])
+}
+
+/// 公众号主页合集/专辑（站长粘贴链接后同步公开列表）
+model WechatMpAlbum {
+  id        String   @id @default(cuid())
+  albumId   String   @unique
+  biz       String   @default("")
+  title     String   @default("")
+  coverUrl  String   @default("")
+  sourceUrl String   @default("")
+  syncedAt  DateTime @default(now())
+  items     WechatMpAlbumItem[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// 合集内文章条目；可关联本站已同步图文，否则仅存微信链接外跳
+model WechatMpAlbumItem {
+  id              String           @id @default(cuid())
+  albumId         String
+  sortOrder       Int              @default(0)
+  title           String           @default("")
+  thumbUrl        String           @default("")
+  wechatUrl       String           @default("")
+  wechatUrlKey    String           @default("")
+  articleLocalId  String?
+  album           WechatMpAlbum    @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  article         WechatMpArticle? @relation(fields: [articleLocalId], references: [id], onDelete: SetNull)
+
+  @@index([albumId, sortOrder])
+  @@index([wechatUrlKey])
+}
+
+model Order {
+  id              String       @id @default(cuid())
+  orderNo         String       @unique
+  userId          String
+  courseId        String
+  /// 购买数量（商城购物车结算；课程默认 1）
+  quantity        Int          @default(1)
+  /// 下单时规格快照
+  specLabel       String       @default("")
+  amount          Int
+  discount        Int          @default(0)
+  status          String       @default("PENDING")
+  payChannel      String       @default("")
+  /// 第一笔真实支付留下的账户快照。回调和查单以 OrderPaymentAttempt 为准，不用这两个会被后续尝试覆盖的字段。
+  payProfileId    String       @default("")
+  /// 第一笔真实支付留下的商户号快照。空表示这笔单还没走过支付中心账户。
+  payMerchantId   String       @default("")
+  paymentAttempts OrderPaymentAttempt[]
+  providerTradeNo String       @default("")
+  codeUrl         String       @default("")
+  couponId        String?
+  /// 独立券实例。与 couponId 同时存在时，占用的是同一活动额度里的一张券。
+  couponInstanceId String?
+  referralCode    String?
+  /// 用户填写的下单信息采集答案（JSON）
+  formAnswersJson String       @default("")
+  paidAt          DateTime?
+
+  /// —— 支付履约结算快照（单位：分；站长可审计）——
+  /// 入驻商家订单：平台抽成比例快照
+  platformCutPercent Int @default(0)
+  /// 平台抽成金额（分）
+  platformCutAmount  Int @default(0)
+  /// 商家实得 = amount - platformCutAmount（非商家课为 0）
+  merchantNetAmount  Int @default(0)
+  /// 发展商家的代理从「平台抽成」中再分得（分）
+  agentMerchantShareAmount Int @default(0)
+  agentMerchantId String @default("")
+
+  /// 单一推荐人（注册邀请 / 订单 referralCode 解析）；按推荐人角色取对应比例
+  referrerUserId       String @default("")
+  referrerRole         String @default("")
+  referrerSharePercent Int    @default(0)
+  referrerShareAmount  Int    @default(0)
+
+  user            User         @relation(fields: [userId], references: [id])
+  course          Course       @relation(fields: [courseId], references: [id])
+  coupon          Coupon?      @relation(fields: [couponId], references: [id])
+  couponInstance  CouponInstance? @relation("OrderCouponInstance", fields: [couponInstanceId], references: [id])
+  commissions     Commission[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([couponInstanceId])
+}
+
+/// 每一次支付尝试单独锁定渠道、账户、版本和商户。后一次尝试不能改掉前一次的绑定。
+model OrderPaymentAttempt {
+  id             String   @id @default(cuid())
+  orderId        String
+  provider       String
+  method         String
+  profileId      String   @default("")
+  profileVersion Int      @default(0)
+  merchantId     String   @default("")
+  appId          String   @default("")
+  amountCents    Int
+  outTradeNo     String
+  status         String   @default("PENDING")
+  createdAt      DateTime @default(now())
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, provider])
+  @@index([outTradeNo, provider])
+}
+
+/// 论坛分区。表名沿用 ForumUniversity，避免改帖子/专区外键。
+/// kind：UNIVERSITY 大学论坛 | CIRCLE 兴趣圈子 | CITY 本地同城 | ORG 单位机构。大学只是其中一类。
+model ForumUniversity {
+  id          String      @id @default(cuid())
+  name        String
+  slug        String      @unique
+  slogan      String      @default("")
+  description String      @default("")
+  logoUrl     String      @default("")
+  /// 分区页最上方广告栏
+  adImageUrl  String      @default("")
+  adHref      String      @default("")
+  adAlt       String      @default("")
+  /// 仅大学分区：限制认证的校园邮箱后缀；圈子/同城/单位忽略
+  emailDomains String     @default("")
+  /// 大学/同城/单位：CHINA 国内 | INTERNATIONAL 海外；圈子可空置
+  region      String      @default("CHINA")
+  /// UNIVERSITY | CIRCLE | CITY | ORG
+  kind        String      @default("UNIVERSITY")
+  enabled     Boolean     @default(true)
+  sortOrder   Int         @default(0)
+  members     User[] @relation("ForumLastUniversity")
+  homeMembers User[] @relation("ForumHomeUniversity")
+  zones       ForumZone[]
+  posts       ForumPost[]
+  schoolVerifications ForumSchoolVerification[]
+  campusPolicy CampusSchoolPolicy?
+  campusModuleSettings CampusModuleSetting[]
+  campusListings CampusListing[]
+  campusResources CampusResource[]
+  campusGuideItems CampusGuideItem[]
+  campusAchievementTracks CampusAchievementTrack[]
+  campusCanteens CampusCanteen[]
+  campusMap CampusMap?
+  campusTerms CampusTerm[]
+  campusToolGuides CampusToolGuide[]
+  campusRoutePresets CampusRoutePreset[]
+  campusComplaints CampusComplaint[]
+  campusCreditEntries CampusCreditEntry[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([kind, enabled, sortOrder])
+  @@index([enabled, region, sortOrder])
+  @@index([enabled, sortOrder])
+}
+
+/// 分区内的话题专区。parentId 空=一级；有值=挂在该一级下的二级。最多两级。
+model ForumZone {
+  id           String           @id @default(cuid())
+  universityId String
+  university   ForumUniversity  @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  /// 空 = 一级话题；有值必须指向同分区的一级话题
+  parentId     String?
+  parent       ForumZone?       @relation("ForumZoneTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children     ForumZone[]      @relation("ForumZoneTree")
+  key          String
+  name         String
+  sortOrder    Int              @default(0)
+  enabled      Boolean          @default(true)
+  posts        ForumPost[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([universityId, key])
+  @@index([universityId, sortOrder])
+  @@index([parentId, sortOrder])
+}
+
+/// 高校分区里的帖子（图文/视频合一，不再区分笔记）
+model ForumPost {
+  id            String           @id @default(cuid())
+  universityId  String
+  university    ForumUniversity  @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  zoneId        String
+  zone          ForumZone        @relation(fields: [zoneId], references: [id], onDelete: Restrict)
+  authorId      String
+  author        User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  /// 历史字段，新帖一律 POST
+  kind          String           @default("POST")
+  title         String           @default("")
+  body          String
+  /// JSON：[{kind:"image"|"video",url}]，最多 30 条
+  mediaJson     String           @default("[]")
+  /// 地点文案（城市 + 具体地点）；可选，与约搭同一套地图选点
+  place         String           @default("")
+  /// 可选纬度（WGS84）；须与 longitude 成对
+  latitude      Float?
+  /// 可选经度（WGS84）；须与 latitude 成对
+  longitude     Float?
+  /// PUBLISHED | HIDDEN | DRAFT（草稿仅作者可见，不算公开发帖）
+  status        String           @default("PUBLISHED")
+  /// PUBLIC 所有人可见 | SCHOOL_VERIFIED 仅该校已实名认证用户可见
+  audience      String           @default("PUBLIC")
+  likeCount     Int              @default(0)
+  favoriteCount Int              @default(0)
+  commentCount  Int              @default(0)
+  watchCount    Int              @default(0)
+  shareCount    Int              @default(0)
+  /// 公开知识圈的 slug。只展示知识社区确认可公开的卡片，不复制会员正文。
+  knowledgeCommunitySlug String @default("")
+  comments      ForumComment[]
+  actions       ForumAction[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([universityId, status, createdAt])
+  @@index([universityId, status, audience])
+  @@index([zoneId, createdAt])
+  @@index([authorId, createdAt])
+  @@index([authorId, status, updatedAt])
+}
+
+/// 高校实名认证：每人最多一所本科 + 一所研究生；通过后可看「仅本校可见」帖。
+/// 学生证照片存 proofUrl（OSS 或本地 uploads）；预览须签发 inline。
+model ForumSchoolVerification {
+  id           String          @id @default(cuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  universityId String
+  university   ForumUniversity @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  /// UNDERGRAD 本科 | GRADUATE 研究生
+  degreeLevel  String
+  realName     String
+  studentId    String          @default("")
+  campusEmail  String          @default("")
+  /// 年级，如 2023级 / 大三 / 研一
+  grade        String          @default("")
+  /// 专业，如 计算机科学与技术
+  major        String          @default("")
+  /// 学生证/学生卡照片：入库为 canonical URL，预览须签发 inline，下载才用 attachment
+  proofUrl     String          @default("")
+  /// PENDING | VERIFIED | REJECTED
+  status       String          @default("PENDING")
+  reviewNote   String          @default("")
+  reviewedAt   DateTime?
+  reviewedById String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([userId, degreeLevel])
+  @@index([universityId, status])
+  @@index([status, createdAt])
+  @@index([userId, status])
+}
+
+model ForumComment {
+  id        String    @id @default(cuid())
+  postId    String
+  post      ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime  @default(now())
+
+  @@index([postId, createdAt])
+}
+
+/// 点赞 / 收藏 / 蹲蹲后续（关注后续评论）
+model ForumAction {
+  id        String    @id @default(cuid())
+  postId    String
+  post      ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// LIKE | FAVORITE | WATCH
+  type      String
+  createdAt DateTime  @default(now())
+
+  @@unique([postId, userId, type])
+  @@index([userId, type, createdAt])
+}
+
+/// 蹲一蹲。取消只把 enabled 设为 false，不删历史。
+model WatchSubscription {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resourceType String
+  resourceId   String
+  enabled      Boolean  @default(true)
+  channels     String   @default("IN_APP,WECHAT")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, resourceType, resourceId])
+  @@index([resourceType, resourceId, enabled])
+}
+
+model SiteNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event     String
+  title     String
+  body      String
+  linkUrl   String    @default("")
+  dedupeKey String    @unique
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+/// 站长和一名用户的长期私信。按 Account sub 关联，不用邮箱或手机号当主键。
+model DirectConversation {
+  id             String          @id @default(cuid())
+  /// usr_xxx；还没有账号中心编号时用 local:用户id，避免和别人的 sub 撞车
+  participantKey String          @unique
+  participantSub String          @default("")
+  userId         String?
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  lastMessageAt  DateTime        @default(now())
+  messages       DirectMessage[]
+
+  @@index([userId])
+  @@index([lastMessageAt])
+}
+
+model DirectMessage {
+  id               String             @id @default(cuid())
+  conversationId   String
+  conversation     DirectConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  /// 发送人的 Account sub。本地旧账号可能为空
+  senderSub        String             @default("")
+  senderUserId     String             @default("")
+  /// OWNER 站长发给用户；USER 用户回复站长
+  senderKind       String
+  body             String
+  createdAt        DateTime           @default(now())
+  readAt           DateTime?
+  /// Platform 投递状态。空表示还没尝试微信，或这是用户回复
+  wechatStatus     String             @default("")
+  wechatDeliveryId String             @default("")
+  wechatDetail     String             @default("")
+  idempotencyKey   String?            @unique
+
+  @@index([conversationId, createdAt])
+  @@index([senderUserId, createdAt])
+}
+
+model SiteAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String
+  detail     String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@index([action, createdAt])
+}
+
+/// 业务正文多语言缓存（源文为简体中文；一键翻译写入，按 sourceHash 判断是否过期）
+model ContentTranslation {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  field      String
+  locale     String
+  sourceHash String   @default("")
+  text       String   @default("")
+  /// 源文变更后标记过期，可再一键重翻
+  stale      Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([entityType, entityId, field, locale])
+  @@index([entityType, entityId])
+  @@index([locale, stale])
+}
+
+/// 识图转 LaTeX 额度账本。
+/// memberPages 只在 memberUntil 未过期时可用；过期后剩余会员页作废，须再开通才能拿到新的 150 页。
+/// guestPages 是按 0.5 元/页买下的剩余次数，不过期；会员期内不能再散买，但以前买剩的仍可接着用。
+model MathcodeWallet {
+  userId      String    @id
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberPages Int       @default(0)
+  memberUntil DateTime?
+  guestPages  Int       @default(0)
+  updatedAt   DateTime  @updatedAt
+}
+
+/// 每次成功识别/转换扣 1 页的流水，便于对账与客服查单。
+model MathcodeUsage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// MEMBER | GUEST
+  source    String
+  unitLabel String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/// 网页文档。content / listScheme 存 JSON，改编号规则只改 listScheme，不必重写正文。
+/// plainText 只给搜索用，权威正文仍是 content。知识库位置在 DocsNode，不复制正文。
+model DocsDocument {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String
+  content    String
+  /// 保存时从正文抽出的纯文本，旧文档为空直到下一次保存或回填
+  plainText  String   @default("")
+  listScheme String   @default("{}")
+  /// 页眉 / 页脚 / 页码位置，JSON
+  pageChrome String   @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  nodes      DocsNode[]
+  documentTags DocsDocumentTag[]
+  shares     DocsShare[]
+
+  @@index([userId, updatedAt])
+}
+
+/// 个人知识库。文档不因为进入空间而被复制。
+model DocsSpace {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  nodes     DocsNode[]
+  shares    DocsShare[]
+
+  @@index([userId, updatedAt])
+}
+
+/// 知识库里的文件夹或文档入口。文档正式身份在 DocsDocument，这里只记录一个父级和顺序。
+model DocsNode {
+  id         String    @id @default(cuid())
+  userId     String
+  spaceId    String
+  space      DocsSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  parentId   String?
+  parent     DocsNode? @relation("DocsNodeTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children   DocsNode[] @relation("DocsNodeTree")
+  /// folder | document
+  kind       String
+  name       String
+  documentId String?
+  document   DocsDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  sortOrder  Int       @default(0)
+  /// active | trashed。文件夹进回收站时，子节点先回到上一级，不删文档。
+  status     String    @default("active")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId, spaceId, status, sortOrder])
+  @@index([parentId])
+  @@index([documentId])
+}
+
+/// 标签标识 key 与展示名分开。改名只改 name。
+model DocsTag {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key       String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  documents DocsDocumentTag[]
+
+  @@unique([userId, key])
+  @@index([userId, name])
+}
+
+model DocsDocumentTag {
+  documentId String
+  tagId      String
+  document   DocsDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tag        DocsTag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt  DateTime     @default(now())
+
+  @@id([documentId, tagId])
+  @@index([tagId])
+}
+
+/// 分享凭证。token 只给作者再次复制；校验用 tokenHash。令牌不能当编辑权限。
+model DocsShare {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// document | space
+  scope             String
+  documentId        String?
+  document          DocsDocument? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  spaceId           String?
+  space             DocsSpace? @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  tokenHash         String    @unique
+  token             String    @unique
+  /// 知识库分享里作者显式勾选的文档。新文档不会自动加进来。
+  documentIds       String    @default("[]")
+  expiresAt         DateTime?
+  revokedAt         DateTime?
+  /// 撤销、重新生成或改范围时加一，避免旧的分享响应被复用
+  version           Int       @default(1)
+  watermarkText     String    @default("")
+  watermarkOpacity  Float     @default(0.12)
+  watermarkOnPrint  Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([userId, updatedAt])
+  @@index([documentId])
+  @@index([spaceId])
+}
+
+/// 支付履约发页记录。orderId 唯一：微信回调重放时不得再加 150 页。
+/// 站长内容导出草稿。只存来源引用和宣传覆写，不回写原帖，也不存公众号密钥。
+model ContentPublishDraft {
+  id             String   @id @default(cuid())
+  ownerId        String
+  title          String   @default("")
+  presetKey      String   @default("forum-digest")
+  templateKey    String   @default("forum-wall")
+  collectionJson String   @default("{}")
+  status         String   @default("DRAFT")
+  contentHash    String   @default("")
+  wechatMediaIds String   @default("[]")
+  lastError      String   @default("")
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([ownerId, updatedAt])
+}
+
+model MathcodeGrant {
+  orderId   String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// MEMBERSHIP | PAGES
+  kind      String
+  pages     Int
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// 论坛跨校会员授予记录。orderId 唯一：同一笔已支付订单只能顺延一次。
+/// 退款或取消后把 status 改为 REVOKED，再按仍有效的记录重算 forumCrossSchoolUntil。
+model ForumCrossSchoolGrant {
+  orderId     String    @id
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// monthly | yearly
+  planKey     String
+  months      Int
+  amountCents Int
+  currency    String    @default("CNY")
+  /// 这笔订单履约时的时间。续费是否叠在未到期权益之后，按这个时间重放。
+  effectiveAt DateTime
+  /// ACTIVE | REVOKED
+  status      String    @default("ACTIVE")
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, status])
+}
+
+/// 主站浏览器上的多账号。同一标签页用上下文 id 选择其中一枚会话。
+model WwwBrowserDevice {
+  id           String    @id @default(cuid())
+  tokenHash    String    @unique
+  explicitPick Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+  accounts     WwwDeviceAccount[]
+  tabs         WwwTabContext[]
+}
+
+model WwwDeviceAccount {
+  id        String    @id @default(cuid())
+  deviceId  String
+  userId    String
+  holdId    String    @unique
+  tokenHash String
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+  device    WwwBrowserDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, userId])
+}
+
+model WwwTabContext {
+  id         String    @id
+  deviceId   String
+  holdId     String    @default("")
+  activeRole String    @default("")
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+  device     WwwBrowserDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+}
+
+/// 校园服务总开关。没有这一行时：大学分区默认开放，圈子/同城/单位默认关闭。
+/// 关掉只影响校园服务，原论坛发帖、评论和认证照旧。
+model CampusSchoolPolicy {
+  universityId    String          @id
+  university      ForumUniversity @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  servicesEnabled Boolean         @default(true)
+  /// 低于此分不能新发校园服务。不限制原论坛发言，也不会自动封号。
+  creditFloor     Int             @default(-30)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+/// 某一所学校的某个校园栏目。分类由站长配置，不写死示例校名。
+model CampusModuleSetting {
+  id             String          @id @default(cuid())
+  universityId   String
+  university     ForumUniversity @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  module         String
+  enabled        Boolean         @default(true)
+  requireAudit   Boolean         @default(false)
+  categoriesJson String          @default("[]")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([universityId, module])
+}
+
+/// 校园服务单。金额用分，时间用 UTC。状态按栏目走各自的状态机，不用一个 closed 包办。
+model CampusListing {
+  id              String          @id @default(cuid())
+  universityId    String
+  university      ForumUniversity @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  authorId        String
+  author          User            @relation("CampusListingAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  module          String
+  title           String
+  body            String          @default("")
+  status          String
+  /// PENDING | APPROVED | REJECTED。未通过的不进公开列表和详情。
+  auditStatus     String          @default("APPROVED")
+  category        String          @default("")
+  placeFrom       String          @default("")
+  placeTo         String          @default("")
+  startsAt        DateTime?
+  endsAt          DateTime?
+  seatsTotal      Int?
+  seatsTaken      Int             @default(0)
+  /// 费用或标价，单位分。只是说明，不是支付订单。
+  priceCents      Int?
+  contact         String          @default("")
+  /// 取件码、证件说明等。公开接口按角色裁剪。
+  secretNote      String          @default("")
+  mediaJson       String          @default("[]")
+  secretMediaJson String          @default("[]")
+  tagsJson        String          @default("[]")
+  /// 树洞展示名，由帖子 id 派生，不由用户 id 派生，避免跨帖对上同一个人。
+  anonLabel       String          @default("")
+  official        Boolean         @default(false)
+  closedReason    String          @default("")
+  reviewNote      String          @default("")
+  /// 最近一次审核通过的公开内容。作者改稿后，其他人仍看这份，直到再次通过。
+  publishedJson   String          @default("")
+  deletedAt       DateTime?
+  participants    CampusParticipant[]
+  favorites       CampusFavorite[]
+  reactions       CampusReaction[]
+  reviews         CampusReview[]
+  comments        CampusComment[]
+  events          CampusEvent[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([universityId, module, auditStatus, status, createdAt])
+  @@index([authorId, createdAt])
+  @@index([universityId, module, placeFrom, placeTo])
+}
+
+/// 拼车乘客、服务承接人、二手预留、失物核验、兼职投递。
+/// exclusiveKey 仅在「这一单只能有一个进行中的独占角色」时写成 listingId。
+model CampusParticipant {
+  id           String        @id @default(cuid())
+  listingId    String
+  listing      CampusListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role         String
+  /// ACTIVE | CANCELLED
+  state        String        @default("ACTIVE")
+  exclusiveKey String?       @unique
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([listingId, userId, role])
+  @@index([listingId, state])
+  @@index([userId, state])
+}
+
+model CampusFavorite {
+  id        String        @id @default(cuid())
+  listingId String
+  listing   CampusListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@unique([listingId, userId])
+  @@index([userId, createdAt])
+}
+
+/// LIKE 点赞，RECOMMEND 公益推荐。同一人同一帖同一类型只能有一条。
+model CampusReaction {
+  id        String        @id @default(cuid())
+  listingId String
+  listing   CampusListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  createdAt DateTime      @default(now())
+
+  @@unique([listingId, userId, type])
+}
+
+/// 只有办结后的真实参与双方可以评价。一单一人对同一帖只能评一次。
+model CampusReview {
+  id           String        @id @default(cuid())
+  listingId    String
+  listing      CampusListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  universityId String
+  authorId     String
+  author       User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  targetId     String
+  rating       Int
+  body         String        @default("")
+  createdAt    DateTime      @default(now())
+
+  @@unique([listingId, authorId])
+  @@index([universityId, createdAt])
+}
+
+model CampusComment {
+  id           String        @id @default(cuid())
+  listingId    String
+  listing      CampusListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  universityId String
+  authorId     String
+  author       User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body         String
+  /// PUBLISHED | PENDING | HIDDEN | DELETED
+  status       String        @default("PUBLISHED")
+  anonLabel    String        @default("")
+  createdAt    DateTime      @default(now())
+
+  @@index([listingId, status, createdAt])
+}
+
+/// 状态变更流水。idempotencyKey 唯一，重复提交不会把占座或接单做两次。
+model CampusEvent {
+  id             String        @id @default(cuid())
+  listingId      String
+  listing        CampusListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  universityId   String
+  actorId        String
+  action         String
+  fromStatus     String        @default("")
+  toStatus       String        @default("")
+  note           String        @default("")
+  idempotencyKey String        @unique
+  createdAt      DateTime      @default(now())
+
+  @@index([listingId, createdAt])
+  @@index([universityId, createdAt])
+}
+
+/// 信用流水。余额是条目之和，没有可由客户端直接改的分数字段。
+model CampusCreditEntry {
+  id           String          @id @default(cuid())
+  universityId String
+  university   ForumUniversity @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  delta        Int
+  reason       String
+  sourceKey    String          @unique
+  actorId      String
+  reversesId   String?
+  createdAt    DateTime        @default(now())
+
+  @@index([universityId, userId, createdAt])
+}
+
+model CampusComplaint {
+  id           String                 @id @default(cuid())
+  universityId String
+  university   ForumUniversity        @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  authorId     String
+  author       User                   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  targetType   String
+  targetId     String
+  title        String
+  body         String
+  /// OPEN | PROCESSING | RESOLVED | REJECTED | APPEALED
+  status       String                 @default("OPEN")
+  evidenceJson String                 @default("[]")
+  resultNote   String                 @default("")
+  rating       Int?
+  events       CampusComplaintEvent[]
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@index([universityId, status, createdAt])
+  @@index([authorId, createdAt])
+}
+
+model CampusComplaintEvent {
+  id          String          @id @default(cuid())
+  complaintId String
+  complaint   CampusComplaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  actorId     String
+  kind        String
+  note        String          @default("")
+  createdAt   DateTime        @default(now())
+
+  @@index([complaintId, createdAt])
+}
+
+/// 题库和考试资料。只做目录、投稿和附件，不判分、不记答题。
+model CampusResource {
+  id           String          @id @default(cuid())
+  universityId String
+  university   ForumUniversity @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  authorId     String
+  author       User            @relation("CampusResourceAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  title        String
+  body         String          @default("")
+  /// GENERAL | EXAM
+  category     String          @default("GENERAL")
+  mediaJson    String          @default("[]")
+  auditStatus  String          @default("PENDING")
+  /// DRAFT | PUBLISHED | HIDDEN
+  status       String          @default("DRAFT")
+  deletedAt    DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([universityId, category, auditStatus, status])
+  @@index([authorId, createdAt])
+}
+
+model CampusGuideItem {
+  id           String               @id @default(cuid())
+  universityId String
+  university   ForumUniversity      @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  authorId     String
+  author       User                 @relation("CampusGuideAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  /// LANDMARK | ORGANIZATION | ANIMAL | PLANT | AWARD | CERTIFICATE | LIMITED
+  category     String
+  title        String
+  body         String               @default("")
+  mediaJson    String               @default("[]")
+  auditStatus  String               @default("PENDING")
+  status       String               @default("PUBLISHED")
+  deletedAt    DateTime?
+  checkins     CampusGuideCheckin[]
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@index([universityId, category, auditStatus, status])
+}
+
+/// 重复打卡追加一条，不覆盖上一次的图片和笔记。
+model CampusGuideCheckin {
+  id           String          @id @default(cuid())
+  itemId       String
+  item         CampusGuideItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  universityId String
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  note         String          @default("")
+  mediaJson    String          @default("[]")
+  createdAt    DateTime        @default(now())
+
+  @@index([itemId, createdAt])
+  @@index([universityId, userId, createdAt])
+}
+
+model CampusAchievementTrack {
+  id           String                        @id @default(cuid())
+  universityId String
+  university   ForumUniversity               @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  title        String
+  body         String                        @default("")
+  enabled      Boolean                       @default(true)
+  submissions  CampusAchievementSubmission[]
+  createdAt    DateTime                      @default(now())
+  updatedAt    DateTime                      @updatedAt
+
+  @@index([universityId, enabled])
+}
+
+model CampusAchievementSubmission {
+  id         String                 @id @default(cuid())
+  trackId    String
+  track      CampusAchievementTrack @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  universityId String
+  userId     String
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body       String                 @default("")
+  mediaJson  String                 @default("[]")
+  /// DRAFT | PENDING | APPROVED | REJECTED
+  status     String                 @default("PENDING")
+  reviewNote String                 @default("")
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  @@index([trackId, status])
+  @@index([universityId, userId, createdAt])
+}
+
+model CampusCanteen {
+  id           String          @id @default(cuid())
+  universityId String
+  university   ForumUniversity @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  name         String
+  place        String          @default("")
+  enabled      Boolean         @default(true)
+  stalls       CampusStall[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([universityId, enabled])
+}
+
+model CampusStall {
+  id           String            @id @default(cuid())
+  canteenId    String
+  canteen      CampusCanteen     @relation(fields: [canteenId], references: [id], onDelete: Cascade)
+  universityId String
+  name         String
+  category     String            @default("")
+  enabled      Boolean           @default(true)
+  reviews      CampusStallReview[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([universityId, canteenId])
+}
+
+model CampusStallReview {
+  id           String      @id @default(cuid())
+  stallId      String
+  stall        CampusStall @relation(fields: [stallId], references: [id], onDelete: Cascade)
+  universityId String
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating       Int
+  body         String      @default("")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([stallId, userId])
+  @@index([universityId, stallId])
+}
+
+/// 一所学校一张底图。定位参数由站长填写，不把参考源码里的坐标写死。
+model CampusMap {
+  universityId String          @id
+  university   ForumUniversity @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  title        String          @default("校园地图")
+  imageUrl     String          @default("")
+  originLat    Float?
+  originLng    Float?
+  widthPx      Int             @default(0)
+  heightPx     Int             @default(0)
+  note         String          @default("")
+  pois         CampusPoi[]
+  updatedAt    DateTime        @updatedAt
+}
+
+model CampusPoi {
+  id           String    @id @default(cuid())
+  universityId String
+  map          CampusMap @relation(fields: [universityId], references: [universityId], onDelete: Cascade)
+  name         String
+  category     String    @default("")
+  x            Float     @default(0)
+  y            Float     @default(0)
+  lat          Float?
+  lng          Float?
+  note         String    @default("")
+
+  @@index([universityId, name])
+}
+
+model CampusTerm {
+  id           String               @id @default(cuid())
+  universityId String
+  university   ForumUniversity      @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  name         String
+  /// 民用日期 YYYY-MM-DD，按北京时间理解，避免时区把周次算错。
+  startsOn     String
+  endsOn       String
+  events       CampusCalendarEvent[]
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@index([universityId, startsOn])
+}
+
+model CampusCalendarEvent {
+  id           String     @id @default(cuid())
+  termId       String
+  term         CampusTerm @relation(fields: [termId], references: [id], onDelete: Cascade)
+  universityId String
+  title        String
+  date         String
+  kind         String     @default("EVENT")
+  note         String     @default("")
+
+  @@index([universityId, date])
+  @@index([termId, date])
+}
+
+/// 办事工具只保存指引。mode 固定 GUIDANCE，除非将来接上真实官方接口。
+model CampusToolGuide {
+  id           String          @id @default(cuid())
+  universityId String
+  university   ForumUniversity @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  toolKey      String
+  title        String
+  summary      String          @default("")
+  materials    String          @default("")
+  faq          String          @default("")
+  contactName  String          @default("")
+  phone        String          @default("")
+  officialUrl  String          @default("")
+  mode         String          @default("GUIDANCE")
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([universityId, toolKey])
+}
+
+model CampusRoutePreset {
+  id                 String          @id @default(cuid())
+  universityId       String
+  university         ForumUniversity @relation(fields: [universityId], references: [id], onDelete: Cascade)
+  label              String
+  placeFrom          String
+  placeTo            String
+  /// 参考费用，单位分。页面必须标明不是订单。
+  referenceFeeCents  Int?
+  enabled            Boolean         @default(true)
+  sortOrder          Int             @default(0)
+  createdAt          DateTime        @default(now())
+
+  @@index([universityId, enabled, sortOrder])
+}
+
+/// 校园附件。文件在 data/campus-private，不进 public/uploads。读取必须走鉴权接口。
+model CampusMedia {
+  id           String   @id @default(cuid())
+  ownerId      String
+  owner        User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  universityId String
+  /// LISTING_PUBLIC | LISTING_SECRET | TREEHOLE | COMPLAINT | ACHIEVEMENT | RESOURCE
+  purpose      String
+  relativePath String
+  mimeType     String
+  byteSize     Int
+  originalName String   @default("")
+  createdAt    DateTime @default(now())
+
+  @@index([ownerId, createdAt])
+  @@index([universityId, purpose])
+}
+
+/// 站内通知投递记录。失败留在这里重试，不回滚已经完成的接单或占座。
+model CampusNoticeAttempt {
+  id        String   @id @default(cuid())
+  dedupeKey String   @unique
+  userId    String
+  event     String
+  /// SENT | FAILED | SKIPPED
+  status    String
+  error     String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+}
